@@ -1,4 +1,4 @@
-use crate::gb::instructions::{Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}};
+use crate::gb::instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}};
 
 macro_rules! get_set  {
     ($reg:ident, $get_name:ident, $set_name:ident, $size:ty) => {
@@ -160,11 +160,25 @@ impl Registers {
         }
     }
 
-    pub fn get16(&self, reg: Reg16) -> u16 {
+    pub fn get16(&mut self, reg: Reg16) -> u16 {
         match reg {
             BC => self.get_bc(),
             DE => self.get_de(),
-            HL(_) => self.get_hl(),
+            HL(delta) => {
+                match delta {
+                    Delta::None => self.get_hl(),
+                    Delta::Increment => {
+                        let old = self.get_hl();
+                        self.set_hl(old.wrapping_add(1));
+                        old
+                    }
+                    Delta::Decrement => {
+                        let old = self.get_hl();
+                        self.set_hl(old.wrapping_sub(1));
+                        old
+                    }
+                }
+            }
             SP => self.get_sp(),
             AF => self.get_af(),
         }
@@ -212,12 +226,14 @@ impl Registers {
         (self.f & flag as u8) != 0
     }
 
-    pub fn check_conditions(&self, opcode: u8) -> bool {
-        match (opcode >> 3) & 0x03 {
-            0 => !self.get_flag(FlagBits::Z),
-            1 => self.get_flag(FlagBits::Z),
-            2 => !self.get_flag(FlagBits::C),
-            3 => self.get_flag(FlagBits::C),
+    pub fn check_conditions(&self, condition: Condition) -> bool {
+        use crate::gb::instructions::Condition::{C, NC, Z, NZ};
+        
+        match condition {
+            NZ => !self.get_flag(FlagBits::Z),
+            Z => self.get_flag(FlagBits::Z),
+            NC => !self.get_flag(FlagBits::C),
+            C => self.get_flag(FlagBits::C),
             _ => unreachable!(),
         }
     }

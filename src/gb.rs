@@ -15,7 +15,7 @@ pub struct GameBoy {
 impl GameBoy {
     pub fn new(cart: Cartridge) -> Self {
         Self {
-            cpu: Cpu::new(),
+            cpu: Cpu::new(true),
             bus: Bus::new(cart),
         }
     }

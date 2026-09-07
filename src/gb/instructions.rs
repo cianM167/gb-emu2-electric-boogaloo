@@ -49,6 +49,7 @@ pub enum Operands {
     MemReg(MemTarget, Reg8),
     RegMem(Reg8, MemTarget),
     Cond(Condition),
+    CondImm8(Condition),
     CondImm16(Condition),
     Imm16,
 }
@@ -100,8 +101,8 @@ pub struct Instruction {
     pub operands: Operands,
 }
 
-fn unimplemented(instr: &Instruction, cpu: &mut Cpu, _: &mut Bus) -> u8 {
-    panic!("Unimplemented instruction: {:x}", instr.opcode);
+pub fn unimplemented(instr: &Instruction, cpu: &mut Cpu, _: &mut Bus) -> u8 {
+    panic!("Unimplemented instruction: {:x}, mnemonic: {}", instr.opcode, instr.name);
 }
 
 pub fn nop(instr: &Instruction, cpu: &mut Cpu, _: &mut Bus) -> u8 {
@@ -141,6 +142,42 @@ fn ld_rr_n16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set16(dst, val);
 
     cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    instr.cycles as u8
+}
+
+fn ld_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::RegMem(dst, mem) = instr.operands else { unreachable!() };
+    let pc = cpu.registers.get_pc() + 1;
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        MemTarget::Imm16 => bus.read_u16(pc),
+        _ => unreachable!()
+    };
+
+    let val = bus.read(addr);
+
+    cpu.registers.set8(dst, val);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles as u8
+}
+
+fn ld_mem_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::MemReg(mem, src) = instr.operands else { unreachable!() };
+    let pc = cpu.registers.get_pc() + 1;
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        MemTarget::Imm16 => bus.read_u16(pc),
+        _ => unreachable!()
+    };
+
+    let val = cpu.registers.get8(src);
+
+    bus.write(addr, val);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles as u8
 }
 
@@ -354,6 +391,7 @@ fn jr_e8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 }
 
 fn jr_cc_e8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::CondImm8(cond) = instr.operands else { unreachable!() };
     let pc = cpu.registers.get_pc() + 1;
     let offset = bus.read(pc) as i8;
 
@@ -361,12 +399,21 @@ fn jr_cc_e8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     let dest = cpu.registers.get_pc().wrapping_add_signed(offset as i16);
 
-    if cpu.registers.check_conditions(instr.opcode) {
+    if cpu.registers.check_conditions(cond) {
         cpu.registers.set_pc(dest);
         12
     } else {
         8
     }
+}
+
+// misc
+
+fn di(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    cpu.ime = false;
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles as u8
 }
 
 static OPCODES: OnceLock<[Option<Instruction>; 256]> = OnceLock::new();
@@ -446,6 +493,7 @@ fn operands_from_raw(mnemonic: &str, operands: &Vec<RawOperand>) -> Operands {
         (OperandKind::Mem(target), OperandKind::Reg8(reg1)) => Operands::MemReg(target, reg1),
         (OperandKind::Reg8(reg1), OperandKind::Mem(target)) => Operands::RegMem(reg1, target),
         (OperandKind::Cond(condition), OperandKind::None) => Operands::Cond(condition),
+        (OperandKind::Cond(condition), OperandKind::Imm8) => Operands::CondImm8(condition),
         (OperandKind::Cond(condition), OperandKind::Imm16) => Operands::CondImm16(condition),
         (OperandKind::Imm16, OperandKind::None) => Operands::Imm16,
 
@@ -526,7 +574,8 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("LD", Operands::RegReg(_, _)) => ld_r_r,
         ("LD", Operands::RegImm8(_)) => ld_r_n8,
         ("LD", Operands::Reg16Imm16(_)) => ld_rr_n16,
-        ("LD", Operands::RegMem(_, _)) => unimplemented,
+        ("LD", Operands::RegMem(_, _)) => ld_r_mem,
+        ("LD", Operands::MemReg(_, _)) => ld_mem_r,
         
         ("LDH", Operands::RegMem(_, _)) => ldh_r_mem,
         ("LDH", Operands::MemReg(_, _)) => ldh_mem_r,
@@ -543,6 +592,9 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("SUB", Operands::RegReg(_, _)) => sub_r_r,
 
         ("JP", Operands::Imm16) => jp_a16,
+        ("JR", Operands::CondImm8(_)) => jr_cc_e8,
+
+        ("DI", Operands::None) => di,
 
         (_, _) => unimplemented,
         (m, ops) => panic!("no handler for {m} {ops:?}, opcode: {opcode:x}"),

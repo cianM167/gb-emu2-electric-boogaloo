@@ -2,16 +2,29 @@ use crate::gb::cartridge::Cartridge;
 
 pub struct Bus {
     cart: Cartridge,
+
+    ie: u8,
+    iflag: u8,
+
+
     vram: [u8; 0x2000],
     wram: [u8; 0x2000],
+
+    tac: u8,
 }
 
 impl Bus {
     pub fn new(cart: Cartridge) -> Self {
         Self {
             cart,
+
+            ie: 0,
+            iflag: 0xE1,
+
             vram: [0; 0x2000],
-            wram: [0; 0x2000]
+            wram: [0; 0x2000],
+
+            tac: 0,
         }
     }
 
@@ -30,6 +43,14 @@ impl Bus {
             0xC000..=0xDFFF => {
                 self.wram[(addr - 0xC000) as usize]
             }
+
+            0xFF07 => self.tac | 0xF8,
+
+            0xFF0F => self.iflag | 0xE0,
+
+            0xFF26 => 0x00,
+
+            0xFFFF => self.ie | 0xE0,
 
             _ => {
                 panic!("Unknown write :( shitting the bed")
@@ -50,11 +71,19 @@ impl Bus {
             }
 
             0xC000..=0xDFFF => {
-                self.vram[(addr - 0xC000) as usize] = value
+                self.wram[(addr - 0xC000) as usize] = value
             }
 
-            _ => {
-                panic!("Unknown read: shitting the bed")
+            0xFF07 => self.tac = value & 0x07,
+
+            0xFF0F => self.iflag = value | 0xE0,
+
+            0xFF10..=0xFF26 => (println!("WARNING AUDIO IS UNFINISHED AND MAY CAUSE ERRORS")),
+            
+            0xFFFF => self.ie = value,
+
+            addr => {
+                panic!("Unknown write: {addr:04X} shitting the bed")
             }
         }
     }
