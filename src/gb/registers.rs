@@ -1,4 +1,4 @@
-use crate::gb::instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}};
+use crate::gb::{bus::Bus, instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}}, registers};
 
 macro_rules! get_set  {
     ($reg:ident, $get_name:ident, $set_name:ident, $size:ty) => {
@@ -179,7 +179,7 @@ impl Registers {
                     }
                 }
             }
-            SP => self.get_sp(),
+            SP(_) => self.get_sp(),
             AF => self.get_af(),
         }
     }
@@ -189,7 +189,7 @@ impl Registers {
             BC => self.set_bc(val),
             DE => self.set_de(val),
             HL(_) => self.set_hl(val),
-            SP => self.set_sp(val),
+            SP(_) => self.set_sp(val),
             AF => self.set_af(val),
         }
     }
@@ -212,6 +212,14 @@ impl Registers {
             3 => self.set_sp(val),
             _ => unreachable!("ruh roh"),
         }
+    }
+
+    pub fn inc_sp(&mut self, val: u16) {
+        self.sp = self.sp.wrapping_add(val);
+    }
+
+    pub fn dec_sp(&mut self, val: u16) {
+        self.sp = self.sp.wrapping_sub(val);
     }
 
     pub fn set_flag_to(&mut self, flag: FlagBits, cond: bool) {

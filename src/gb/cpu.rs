@@ -1,11 +1,15 @@
 use std::{fs::{self, OpenOptions}, io::Write};
 
-use crate::gb::{bus::Bus, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
+use crate::gb::{bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
 
 pub struct Cpu {
     pub registers: Registers,
     debug: bool,
     pub ime: bool,
+    pub enable_ime_next: bool,
+    halted: bool,
+    halt_bug: bool,
+
     pub opcode: u8,
     pub cycles: u64,
 }
@@ -19,6 +23,9 @@ impl Cpu {
         Self {
             registers: Registers::new(),
             ime: false,
+            enable_ime_next: false,
+            halted: false,
+            halt_bug: false,
             opcode: 0,
             cycles: 0,
             debug
@@ -26,11 +33,11 @@ impl Cpu {
     }
 
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
-        let mut cycles: u8 = 0;
-
         if self.debug {
             self.write_to_log(bus);
         }
+
+        let mut cycles = self.handle_interrupts(bus);
 
         let opcode = bus.read(self.registers.get_pc());
         // println!("opcode read: {:#02X} pc: {:#02X}", opcode, self.registers.get_pc());
@@ -39,7 +46,56 @@ impl Cpu {
 
         cycles += (instr.execute)(&instr, self, bus);// execute instruction
 
+        if self.enable_ime_next {
+            self.ime = true;
+            self.enable_ime_next = false;
+        }
+
         cycles
+    }
+
+    pub fn handle_interrupts(&mut self, bus: &mut Bus) -> u8 {
+        if !self.ime {
+            return 0;
+        }
+
+        let ie = bus.read(0xFFFF);
+        let mut iflag = bus.read(0xFF0F);
+
+        
+
+        let pending = ie & iflag;
+        eprintln!("ie={ie:02X} iflag={iflag:02X} pending={pending:02X} pc={:04X}", self.registers.get_pc());
+        if pending == 0 {
+            return 0;
+        }
+
+        for i in 0..5 {
+            if pending & (1 << i) != 0 {
+                iflag &= !(1 << i);
+                bus.write(0xFF0F, iflag);
+
+                self.ime = false;
+
+                self.registers.set_sp(self.registers.get_sp().wrapping_sub(2));
+                bus.write_u16(self.registers.get_sp(), self.registers.get_pc());
+
+                let pc = match i {
+                    0 => 0x0040,
+                    1 => 0x0048,
+                    2 => 0x0050,
+                    3 => 0x0058,
+                    4 => 0x0060,
+                    _ => unreachable!(),
+                };
+
+                self.registers.set_pc(pc);
+
+                return 16;
+            }
+        }
+
+        return 0;
     }
 
     fn write_to_log(&self, bus: &mut Bus) {// super brittle is temporary :)
