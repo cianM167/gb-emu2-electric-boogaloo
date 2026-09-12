@@ -2,13 +2,14 @@ use std::{fs::{self, OpenOptions}, io::Write};
 
 use crate::gb::{bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
 
+#[derive(Debug)]
 pub struct Cpu {
     pub registers: Registers,
-    debug: bool,
+    pub debug: bool,
     pub ime: bool,
     pub enable_ime_next: bool,
-    halted: bool,
-    halt_bug: bool,
+    pub halted: bool,
+    pub halt_bug: bool,
 
     pub opcode: u8,
     pub cycles: u64,
@@ -16,9 +17,9 @@ pub struct Cpu {
 
 impl Cpu {
     pub fn new(debug: bool) -> Self {
-        if debug {
-            fs::write("log.txt", "");
-        }
+        // if debug {
+        //     fs::write("log.txt", "");
+        // }
 
         Self {
             registers: Registers::new(),
@@ -33,11 +34,29 @@ impl Cpu {
     }
 
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
-        if self.debug {
-            self.write_to_log(bus);
-        }
+        // if self.debug {
+        //     self.write_to_log(bus);
+        // }
 
         let mut cycles = self.handle_interrupts(bus);
+
+        if self.halted {
+            let pending = bus.get_ie() & bus.get_iflag();
+
+            if pending != 0 {
+                cycles += 4;
+
+                if !self.ime {
+                    self.halt_bug = true;
+                }
+
+                self.halted = false;
+                return cycles;
+            } else {
+                cycles +=4;
+                return cycles;
+            }
+        }
 
         let opcode = bus.read(self.registers.get_pc());
         // println!("opcode read: {:#02X} pc: {:#02X}", opcode, self.registers.get_pc());
@@ -65,7 +84,7 @@ impl Cpu {
         
 
         let pending = ie & iflag;
-        eprintln!("ie={ie:02X} iflag={iflag:02X} pending={pending:02X} pc={:04X}", self.registers.get_pc());
+        // eprintln!("ie={ie:08b} iflag={iflag:08b} pending={pending:02X} pc={:04X}", self.registers.get_pc());
         if pending == 0 {
             return 0;
         }
@@ -81,7 +100,10 @@ impl Cpu {
                 bus.write_u16(self.registers.get_sp(), self.registers.get_pc());
 
                 let pc = match i {
-                    0 => 0x0040,
+                    0 => {
+                        // println!("Firing vblank");
+                        0x0040
+                    },
                     1 => 0x0048,
                     2 => 0x0050,
                     3 => 0x0058,
@@ -91,7 +113,7 @@ impl Cpu {
 
                 self.registers.set_pc(pc);
 
-                return 16;
+                return 20;
             }
         }
 
@@ -124,7 +146,14 @@ impl Cpu {
             bus.read(pc + 3),
         );
 
-        let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X}\n");
+        let (ly, stat, lcdc, div) = (
+            bus.get_ly(),
+            bus.get_stat(),
+            bus.get_lcdc(),
+            bus.read_div(),
+        );
+
+        let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X} LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DIV:{div:02X}\n");
 
         file.unwrap().write_all(line.as_bytes()).unwrap();
     }

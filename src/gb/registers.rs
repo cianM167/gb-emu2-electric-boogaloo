@@ -34,6 +34,7 @@ pub enum FlagBits {
     C = 0b0001_0000,
 }
 
+#[derive(Debug)]
 pub struct Registers {
     a: u8,
     b: u8,
