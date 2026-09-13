@@ -27,6 +27,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Normal instructions implemented: {}/245", 256 - unimplemented_count);
     println!("CB instructions implemented: {}/256", 256 - unimplemented_count_cb);
 
+    println!("0x08 timing: {}", opcodes()[0x08].unwrap().cycles);
+
     let mut gb = GameBoy::new(cart);
 
     gb.run();

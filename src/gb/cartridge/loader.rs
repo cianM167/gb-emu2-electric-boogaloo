@@ -21,6 +21,7 @@ pub fn load_rom(path: &str) -> Result<Cartridge, String> {
         0x00 => Box::new(RomData::new(rom)),
         0x01 => Box::new(RomData::new(rom)),
         0x02 => Box::new(RomData::new(rom)),
+        0x03 => Box::new(RomData::new(rom)),// also not finished
         0x13 => Box::new(RomData::new(rom)),//temporary not really implemented
         _ => return Err(format!(
             "Unsupported cartridge type: {:#04X}",

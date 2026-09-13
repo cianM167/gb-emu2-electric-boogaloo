@@ -43,6 +43,7 @@ pub struct Bus {
     // inaccurate bullshit
     dma_source: u8,
     pub joypad: Joypad,
+    frame: u32,
 }
 
 impl Bus {
@@ -68,7 +69,7 @@ impl Bus {
             oam: [0; 0xA0],
             hram: [0xFF; 0x7F],
 
-            joyp: 0,
+            joyp: 0x3F,
 
             lcdc: 0x00,
             bgp: 0xFC,
@@ -83,7 +84,20 @@ impl Bus {
 
             dma_source: 0,
             joypad: Joypad::default(),
+            frame: 0,
         }
+    }
+
+    pub fn get_joyp(&self) -> u8 {
+        self.joyp
+    }
+
+    pub fn inc_frame(&mut self) {
+        self.frame += 1
+    }
+
+    pub fn get_frame(&self) -> u32 {
+        self.frame
     }
 
     pub fn get_scy(&self) -> u8 {
@@ -207,10 +221,13 @@ impl Bus {
             }
 
             0xFF00 => {
-                let mut result = self.joyp & 0xF0 | 0x0F; // start with "nothing pressed" (all 1s) in low nibble
+                let mut result = (self.joyp & 0xF0) | 0x0F; // start with "nothing pressed" (all 1s) in low nibble
 
                 if self.joyp & 0b0001_0000 == 0 { // bit 4 low = d-pad selected
-                    if self.joypad.right { result &= !0b0001; }
+                    if self.joypad.right { 
+                        print!(":))))");
+                        result &= !0b0001; 
+                    }
                     if self.joypad.left  { result &= !0b0010; }
                     if self.joypad.up    { result &= !0b0100; }
                     if self.joypad.down  { result &= !0b1000; }
@@ -222,7 +239,12 @@ impl Bus {
                     if self.joypad.start  { result &= !0b1000; }
                 }
 
-                println!("button press checked, bits: {result:08b}");
+                println!(
+                    "JOYP select:{:08b} -> result:{:08b} (r={} l={} a={} b={})",
+                    self.joyp, result, self.joypad.right, self.joypad.left, self.joypad.a, self.joypad.b
+                );
+
+                // println!("button press checked, bits: {result:08b}");
 
                 result
             }
@@ -237,6 +259,8 @@ impl Bus {
             0xFF0F => self.iflag,
 
             0xFF26 => 0x00,
+
+            0xFF30..=0xFF3F => 0x00,// todo
 
             0xFF40 => {
                 // println!("LCDC UNFINISHED");
@@ -293,7 +317,10 @@ impl Bus {
                 self.wram[(addr - 0xC000) as usize] = value
             }
 
-            0xFF00 => self.joyp = value & 0xF0,
+            0xFF00 => {
+                println!("JOYP write: {:08b}", value);
+                self.joyp = value & 0xF0
+            },
 
             0xFF01 => self.serial_data = value,
             0xFF02 => {
@@ -313,13 +340,20 @@ impl Bus {
 
             0xFF0F => self.iflag = value,
 
-            0xFF10..=0xFF26 => (println!("WARNING AUDIO IS UNFINISHED AND MAY CAUSE ERRORS")),
+            0xFF10..=0xFF26 => (
+                // println!("WARNING AUDIO IS UNFINISHED AND MAY CAUSE ERRORS")
+            ),
+
+            0xFF30..=0xFF3F => (),// todo
 
             0xFF40 => {
                 // println!("LCDC UNFINISHED");
                 self.lcdc = value
             },
-            0xFF41 => self.stat = value,
+            0xFF41 => {
+                println!(":(");
+                self.stat = value | 0x80
+            },
             0xFF42 => self.scy = value,
             0xFF43 => self.scx = value,
             0xFF44 => (),

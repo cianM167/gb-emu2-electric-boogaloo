@@ -80,6 +80,7 @@ impl Cpu {
 
         let ie = bus.read(0xFFFF);
         let mut iflag = bus.read(0xFF0F);
+        let log_iflag = iflag;
 
         
 
@@ -101,7 +102,10 @@ impl Cpu {
 
                 let pc = match i {
                     0 => {
-                        // println!("Firing vblank");
+                        // println!(
+                        //     "FRAME {} | PC:{:04X} IME:{} IE:{:02X} IF:{:02X} JOYP:{:02X} DIV:{:02X} TIMA:{:02X}",
+                        //     bus.get_frame(), self.registers.get_pc(), true, ie, log_iflag, bus.get_joyp(), bus.get_div(), bus.get_tima()
+                        // );
                         0x0040
                     },
                     1 => 0x0048,
