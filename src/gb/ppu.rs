@@ -18,10 +18,12 @@ struct SpriteAttr {
 pub struct Ppu {
     pub frame_buffer: [u32; 160 * 144],
     pub ready: bool,
-    dot_counter: u16,
+    pub dot_counter: u16,
     ly: u8,
     mode: PpuMode,
     bg_color_ids: [u8; 160],
+    just_enabled: bool,
+    was_on_last_step: bool,
 }
 
 impl Ppu {
@@ -33,21 +35,35 @@ impl Ppu {
             ly: 0,
             mode: OamScan,
             bg_color_ids: [0; 160],
+            just_enabled: false,
+            was_on_last_step: false,
         }
     }
 
     pub fn step(&mut self, cycles: u8, bus: &mut Bus) {
         let lcdc = bus.get_lcdc();
-        if lcdc & 0x80 == 0 {
+        let lcd_on = lcdc & 0x80 != 0;
+
+        if !lcd_on {
             self.dot_counter = 0;
-            self.mode = PpuMode::OamScan;
+            self.mode = PpuMode::HBlank;
+            self.ly = 0;
             bus.set_ly(0);
 
             let stat = bus.get_stat();
             bus.set_stat(stat & !0x07);
 
+            self.was_on_last_step = false;
+
             return;
         }
+
+        if lcd_on && !self.was_on_last_step {
+            self.dot_counter = 0;
+            self.mode = PpuMode::HBlank;
+            self.just_enabled = true;
+        }
+        self.was_on_last_step = true;
 
         self.dot_counter += cycles as u16;
 
@@ -55,38 +71,41 @@ impl Ppu {
             PpuMode::OamScan => {
                 while self.dot_counter >= 80 {
                     self.dot_counter -= 80;
-                    self.mode = PpuMode::Drawing
+                    self.mode = PpuMode::Drawing;
                 }
             }
-
             PpuMode::Drawing => {
                 while self.dot_counter >= 172 {
                     self.dot_counter -= 172;
                     self.render_scanline(bus);
                     self.mode = PpuMode::HBlank;
-                    self.update_stat(bus);
                 }
             }
-
             PpuMode::HBlank => {
-                while self.dot_counter >= 204 {
-                    self.dot_counter -= 204;
-                    self.ly += 1;
-                    bus.set_ly(self.ly);
-
-                    if self.ly == 144 {
-                        self.mode = PpuMode::VBlank;
-                        self.ready = true;
-                        bus.request_interrupt(0);// vblank
-                    } else {
-                        self.mode = PpuMode::OamScan;
+                if self.just_enabled {
+                    while self.dot_counter >= 80 {
+                        self.dot_counter -= 80;
+                        self.mode = PpuMode::Drawing;
+                        self.just_enabled = false;
                     }
-                    self.update_stat(bus);
+                } else {
+                    while self.dot_counter >= 204 {
+                        self.dot_counter -= 204;
+                        self.ly += 1;
+                        bus.set_ly(self.ly);
+                        if self.ly == 144 {
+                            self.mode = PpuMode::VBlank;
+                            self.ready = true;
+                            bus.request_interrupt(0);
+                            bus.inc_frame();
+                        } else {
+                            self.mode = PpuMode::OamScan;
+                        }
+                    }
                 }
             }
-
             PpuMode::VBlank => {
-                 while self.dot_counter >= 456 {
+                while self.dot_counter >= 456 {
                     self.dot_counter -= 456;
                     self.ly += 1;
                     if self.ly > 153 {
@@ -94,10 +113,11 @@ impl Ppu {
                         self.mode = PpuMode::OamScan;
                     }
                     bus.set_ly(self.ly);
-                    self.update_stat(bus);
                 }
             }
         }
+
+        self.update_stat(bus);
     }
 
     fn render_scanline(&mut self, bus: &Bus) {
@@ -326,6 +346,20 @@ impl Ppu {
         }
 
         if fire {
+            bus.request_interrupt(1);
+        }
+    }
+
+    fn update_stat_suppressed(&mut self, bus: &mut Bus) {
+        let mut stat = bus.get_stat();
+        stat = (stat & !0x03) | 0x02; // mode 2, OamScan
+        let lyc = bus.get_lyc();
+        let coincidence = self.ly == lyc;
+        stat = if coincidence { stat | 0x04 } else { stat & !0x04 };
+        bus.set_stat(stat);
+
+        // Only the LYC==LY interrupt source is live here — OAM IRQ is suppressed
+        if coincidence && stat & 0x40 != 0 {
             bus.request_interrupt(1);
         }
     }

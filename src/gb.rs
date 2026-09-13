@@ -1,4 +1,4 @@
-use std::{fs::{self, OpenOptions}, io::Write};
+use std::{fs::{self, OpenOptions}, io::Write, thread::sleep, time::{Duration, Instant}};
 
 use crate::gb::{bus::Bus, cartridge::Cartridge, cpu::Cpu, ppu::Ppu};
 use minifb::{Key::{self, Enter}, Window, WindowOptions};
@@ -10,6 +10,8 @@ pub mod registers;
 pub mod bus;
 pub mod cartridge;
 mod ppu;
+
+const FRAME_TIME: Duration = Duration::from_nanos(16_742_706);
 
 pub struct GameBoy {
     cpu: Cpu,
@@ -34,7 +36,7 @@ impl GameBoy {
         // }
 
         Self {
-            cpu: Cpu::new(true),
+            cpu: Cpu::new(false),
             bus: Bus::new(cart),
             ppu: Ppu::new(),
             window: Window::new("GB Emulator", 640, 576, WindowOptions::default()).unwrap(),
@@ -42,11 +44,28 @@ impl GameBoy {
     }
 
     pub fn run(&mut self) {
-        if self.cpu.debug {
-            fs::write("log.txt", "");
-        }
+        // if self.cpu.debug {
+        //     fs::write("log.txt", "");
+        // }
+
+        let mut dots: u16 = 0;
+
+        let mut previous_frame = 0;
+
+        let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
 
         while self.window.is_open() {
+
+            // if self.bus.get_frame() != previous_frame {
+            //     if self.bus.get_frame() == 1 {
+            //         start = std::time::Instant::now();
+            //     }
+
+            //     if self.bus.get_frame() == 60 {
+            //         println!("60 frames took {:?}", start.elapsed());
+            //     }
+            // }
+
             let old_regs:(u8, u8, u8, u8, u8, u8, u8, u8, u16, u16) = (// for debugging
                 self.cpu.registers.get_a(),
                 self.cpu.registers.get_f(),
@@ -60,6 +79,16 @@ impl GameBoy {
                 self.cpu.registers.get_pc(),
             );
 
+            let ppu_stuff = (
+                self.bus.get_ly(),
+                self.bus.get_stat(),
+                self.bus.get_lcdc(),
+            );
+
+            if self.cpu.registers.get_pc() == 0x022A {
+                println!(":3");
+            }
+
             let cycles = self.cpu.step(&mut self.bus);
 
             self.bus.step_timer(cycles);
@@ -68,9 +97,25 @@ impl GameBoy {
             if self.ppu.ready {
                 self.window.update_with_buffer(&self.ppu.frame_buffer, 160, 144).unwrap();
                 self.ppu.ready = false;
+
+                let now = Instant::now();
+                if now < next_frame_time {
+                    sleep(next_frame_time - now);
+                }
+                next_frame_time += FRAME_TIME;
+
+                if Instant::now() > next_frame_time + FRAME_TIME {
+                    next_frame_time = Instant::now() + FRAME_TIME;
+                }
             }
 
-            self.write_to_log(old_regs);
+            // self.write_to_log(old_regs, dots, ppu_stuff);
+
+            dots += cycles as u16;
+
+            if dots >= 456 {
+                dots -= 456;
+            }
 
             let keys = self.window.get_keys();
             self.bus.joypad.a      = keys.contains(&Key::X);
@@ -84,7 +129,7 @@ impl GameBoy {
         }
     }
 
-    fn write_to_log(&self, old_regs: (u8, u8, u8, u8, u8, u8, u8, u8, u16, u16)) {// super brittle is temporary :)
+    fn write_to_log(&self, old_regs: (u8, u8, u8, u8, u8, u8, u8, u8, u16, u16), dots: u16, ppu_stuff: (u8, u8, u8)) {// super brittle is temporary :)
         let file = OpenOptions::new()
             .write(true)
             .append(true)
@@ -99,16 +144,13 @@ impl GameBoy {
             self.bus.read(pc + 3),
         );
 
-        let (ly, stat, lcdc, div) = (
-            self.bus.get_ly(),
-            self.bus.get_stat(),
-            self.bus.get_lcdc(),
-            self.bus.read_div(),
-        );
+        let (ly, stat, lcdc) = ppu_stuff;
 
         let new_pc = pc + 1;
 
-        let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{new_pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X} LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DIV:{div:02X}\n");
+        let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{new_pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X} LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DOT:{dots:03}\n");
+
+        // LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DOT:{dots:03}
 
         file.unwrap().write_all(line.as_bytes()).unwrap();
     }
