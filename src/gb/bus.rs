@@ -220,6 +220,10 @@ impl Bus {
                 self.wram[(addr - 0xC000) as usize]
             }
 
+            // 0xE000..=0xFDFF => {
+            //     self.wram[(addr - 0xE000) as usize]
+            // }
+
             0xFF00 => {
                 let mut result = (self.joyp & 0xF0) | 0x0F; // start with "nothing pressed" (all 1s) in low nibble
 
@@ -239,10 +243,10 @@ impl Bus {
                     if self.joypad.start  { result &= !0b1000; }
                 }
 
-                println!(
-                    "JOYP select:{:08b} -> result:{:08b} (r={} l={} a={} b={})",
-                    self.joyp, result, self.joypad.right, self.joypad.left, self.joypad.a, self.joypad.b
-                );
+                // println!(
+                //     "JOYP select:{:08b} -> result:{:08b} (r={} l={} a={} b={})",
+                //     self.joyp, result, self.joypad.right, self.joypad.left, self.joypad.a, self.joypad.b
+                // );
 
                 // println!("button press checked, bits: {result:08b}");
 
@@ -317,8 +321,12 @@ impl Bus {
                 self.wram[(addr - 0xC000) as usize] = value
             }
 
+            // 0xE000..=0xFDFF => {
+            //     self.wram[(addr - 0xE000) as usize] = value
+            // }
+
             0xFF00 => {
-                println!("JOYP write: {:08b}", value);
+                // println!("JOYP write: {:08b}", value);
                 self.joyp = value & 0xF0
             },
 

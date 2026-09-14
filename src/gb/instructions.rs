@@ -430,6 +430,31 @@ fn add_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn add_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::RegMem(dest, mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let reg1 = cpu.registers.get8(dest);
+    let reg2 = bus.read(addr);
+
+    let sum16 = reg1 as u16 + reg2 as u16;
+    let result = (sum16 & 0xFF) as u8;
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0F) + (reg2 & 0x0F) > 0x0F);
+    cpu.registers.set_flag_to(FlagBits::C, sum16 > 0xFF);
+
+    cpu.registers.set8(dest, result);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn add_r_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dest) = instr.operands else { unreachable!() };
     let pc = cpu.registers.get_pc() + 1;
@@ -480,6 +505,33 @@ fn adc_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let carry = cpu.registers.get_flag(FlagBits::C) as u8;
 
     let reg1 = cpu.registers.get8(src);
+    let reg2 = cpu.registers.get8(dst);
+
+    let sum16 = (reg1 as u16 + reg2 as u16) + carry as u16;
+    let result = (sum16 & 0xFF) as u8;
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0F) + (reg2 & 0x0F) + carry > 0x0F);
+    cpu.registers.set_flag_to(FlagBits::C, sum16 > 0xFF);
+
+    cpu.registers.set8(dst, result);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
+fn adc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::RegMem(dst, mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!()
+    };
+
+    let carry = cpu.registers.get_flag(FlagBits::C) as u8;
+
+    let reg1 = bus.read(addr);
     let reg2 = cpu.registers.get8(dst);
 
     let sum16 = (reg1 as u16 + reg2 as u16) + carry as u16;
@@ -789,6 +841,26 @@ fn and_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let pc = cpu.registers.get_pc() + 1;
 
     let result = cpu.registers.get8(dst) & bus.read(pc);
+    cpu.registers.set8(dst, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, true);
+    cpu.registers.set_flag_to(FlagBits::C, false);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
+fn and_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::RegMem(dst, mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let result = cpu.registers.get8(dst) & bus.read(addr);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -1211,6 +1283,32 @@ fn sla_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result = reg << 1;
     cpu.registers.set8(src, result);
 
+    // println!("SLA, REG in: {reg:08b}, out: {result:08b}, carry: {carry}");
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
+fn sla_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let reg = bus.read(addr);
+
+    let carry = reg & 0b1000_0000 != 0;
+
+    let result = reg << 1;
+    bus.write(addr, result);
+
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
@@ -1321,6 +1419,18 @@ fn set_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result= value | (1 << bit);
 
     bus.write(addr, result);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
+fn set_reg(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::BitReg(bit, reg) = instr.operands else { unreachable!() };
+
+    let value = cpu.registers.get8(reg);
+    let result= value | (1 << bit);
+
+    cpu.registers.set8(reg, result);
 
     cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
@@ -1529,9 +1639,11 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("ADD", Operands::RegImm8(_)) => add_r_d8,
         ("ADD", Operands::Reg16Reg16(_, _)) => add_rr_rr,
         ("ADD", Operands::Reg16Imm8(_)) => add_rr_n8,
+        ("ADD", Operands::RegMem(_, _)) => add_r_mem,
 
         ("ADC", Operands::RegImm8(_)) => adc_r_n8,
         ("ADC", Operands::RegReg(_, _)) => adc_r_r,
+        ("ADC", Operands::RegMem(_, _)) => adc_r_mem,
 
         ("SUB", Operands::RegReg(_, _)) => sub_r_r,
         ("SUB", Operands::RegImm8(_)) => sub_r_d8,
@@ -1549,6 +1661,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
 
         ("AND", Operands::RegReg(_, _)) => and_r_r,
         ("AND", Operands::RegImm8(_)) => and_r_n8,
+        ("AND", Operands::RegMem(_, _)) => and_r_mem,
 
         ("JP", Operands::Imm16) => jp_a16,
         ("JP", Operands::CondImm16(_)) => jp_cc_a16,
@@ -1588,6 +1701,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("SWAP", Operands::Reg(_)) => swap_r,
 
         ("SLA", Operands::Reg(_)) => sla_r,
+        ("SLA", Operands::Mem(_)) => sla_mem,
 
         ("BIT", Operands::BitReg(_, _)) => bit_r,
         ("BIT", Operands::BitMem(_, _)) => bit_mem,
@@ -1596,6 +1710,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("RES", Operands::BitMem(_, _)) => res_mem,
 
         ("SET", Operands::BitMem(_, _)) => set_mem,
+        ("SET", Operands::BitReg(_, _)) => set_reg,
 
         (_, _) => unimplemented,
         (m, ops) => panic!("no handler for {m} {ops:?}, opcode: {opcode:x}"),
