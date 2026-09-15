@@ -1,12 +1,13 @@
 use std::{env, error::Error};
 
+use rfd::FileDialog;
+
 use crate::gb::{GameBoy, cartridge::load_rom, instructions::{opcodes, opcodes_cb, unimplemented}};
 
 mod gb;
 pub mod objects;
 
 struct Args {
-    rom_path: String,
     headless: bool,
     frames: Option<u64>,
     input_script: Option<String>,
@@ -16,7 +17,6 @@ struct Args {
 
 fn parse_args(raw: &[String]) -> Args {
     let mut a = Args {
-        rom_path: raw[1].clone(),
         headless: false,
         frames: None,
         input_script: None,
@@ -40,12 +40,28 @@ fn parse_args(raw: &[String]) -> Args {
     a
 }
 
+fn pick_rom() -> Option<String> {
+    FileDialog::new()
+        .add_filter("Game Boy ROM", &["gb", "gbc"])
+        .add_filter("All files", &["*"])
+        .set_title("Open ROM")
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let raw_args: Vec<String> = env::args().collect();
 
     let args = parse_args(&raw_args);
 
-    let cart = load_rom(&args.rom_path)?;
+    let rom_path = if raw_args.len() > 1 {
+        raw_args[1].clone()
+    } else {
+        pick_rom().ok_or("No ROM selected")?
+    };
+
+    let cart = load_rom(&rom_path)?;
+
     println!("Loaded ROM: {:?}", cart.header.title);
     println!("Cart type: {:?}", cart.header.cartridge_type);
 

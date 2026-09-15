@@ -147,14 +147,14 @@ impl GameBoy {
             cpu: Cpu::new(false),
             bus: Bus::new(cart),
             ppu: Ppu::new(),
-            window: Window::new("GB Emulator", 640, 576, WindowOptions::default()).unwrap(),
+            window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
         }
     }
 
     fn set_pad_button(&mut self, button: Button, pressed: bool) {
-        println!("pad updated button: {button:?}");
+        // println!("pad updated button: {button:?}");
         match button {
             Button::South       => self.pad_state.a = pressed,// A/Cross
             Button::East        => self.pad_state.b = pressed,// B/Circle
