@@ -1918,6 +1918,8 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("SET", Operands::BitMem(_, _)) => set_mem,
         ("SET", Operands::BitReg(_, _)) => set_reg,
 
+        // ("ILLEGAL_F4" ,Operands::None) => nop, // bad
+
         (_, _) => unimplemented,
         (m, ops) => panic!("no handler for {m} {ops:?}, opcode: {opcode:x}"),
     }

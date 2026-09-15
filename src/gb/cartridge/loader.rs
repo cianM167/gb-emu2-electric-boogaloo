@@ -25,7 +25,9 @@ pub fn load_rom(path: &str) -> Result<Cartridge, String> {
         0x05 => Box::new(Mbc2::new(rom)),// mbc2
         0x06 => Box::new(Mbc2::new(rom)),// mbc2 + battery
 
-        0x13 => Box::new(Mbc3::new(rom, header.ram_size_bytes())),//temporary not really implemented
+        0x10 => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// todo
+
+        0x13 => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// temporary not really implemented
 
         0x1B => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// indescribably broken do not try at home
         _ => return Err(format!(

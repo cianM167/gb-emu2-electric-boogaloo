@@ -227,13 +227,7 @@ impl GameBoy {
                 }
                 self.ppu.ready = false;
 
-                if let Some(r) = recorder.as_mut() { r.record(&self.bus.joypad); }
-
-                frame_count += 1;
-            }
-
-
-            while let Some(Event { event, .. }) = self.gilrs.next_event() {
+                while let Some(Event { event, .. }) = self.gilrs.next_event() {
                 match event {
                     EventType::ButtonPressed(button, _) => self.set_pad_button(button, true),
                     EventType::ButtonReleased(button, _) => self.set_pad_button(button, false),
@@ -241,20 +235,25 @@ impl GameBoy {
                 }
             }
 
-            if let Some(script) = &script {
-                println!("applying");
-                script.apply(frame_count, &mut self.bus.joypad);
-            } else if !args.headless {
-                let keys = self.window.get_keys();
+                if let Some(script) = &script {
+                    // println!("applying");
+                    script.apply(frame_count, &mut self.bus.joypad);
+                } else if !args.headless {
+                    let keys = self.window.get_keys();
 
-                self.bus.joypad.a      = keys.contains(&Key::X)     || self.pad_state.a;
-                self.bus.joypad.b      = keys.contains(&Key::Z)     || self.pad_state.b;
-                self.bus.joypad.start  = keys.contains(&Key::Enter) || self.pad_state.start;
-                self.bus.joypad.select = keys.contains(&Key::C)     || self.pad_state.select;
-                self.bus.joypad.up     = keys.contains(&Key::Up)    || self.pad_state.up;
-                self.bus.joypad.down   = keys.contains(&Key::Down)  || self.pad_state.down;
-                self.bus.joypad.left   = keys.contains(&Key::Left)  || self.pad_state.left;
-                self.bus.joypad.right  = keys.contains(&Key::Right) || self.pad_state.right;
+                    self.bus.joypad.a      = keys.contains(&Key::W)     || self.pad_state.a;
+                    self.bus.joypad.b      = keys.contains(&Key::Q)     || self.pad_state.b;
+                    self.bus.joypad.start  = keys.contains(&Key::Enter) || self.pad_state.start;
+                    self.bus.joypad.select = keys.contains(&Key::C)     || self.pad_state.select;
+                    self.bus.joypad.up     = keys.contains(&Key::Up)    || self.pad_state.up;
+                    self.bus.joypad.down   = keys.contains(&Key::Down)  || self.pad_state.down;
+                    self.bus.joypad.left   = keys.contains(&Key::Left)  || self.pad_state.left;
+                    self.bus.joypad.right  = keys.contains(&Key::Right) || self.pad_state.right;
+                }
+
+                if let Some(r) = recorder.as_mut() { r.record(&self.bus.joypad); }
+
+                frame_count += 1;
             }
         }
 

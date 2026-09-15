@@ -39,6 +39,7 @@ pub struct Bus {
     wy: u8,
 
     serial_data: u8,
+    rp: u8,
 
     // inaccurate bullshit
     dma_source: u8,
@@ -81,6 +82,7 @@ impl Bus {
             wy: 0,
 
             serial_data: 0,
+            rp: 0,
 
             dma_source: 0,
             joypad: Joypad::default(),
@@ -360,7 +362,7 @@ impl Bus {
                 self.lcdc = value
             },
             0xFF41 => {
-                println!(":(");
+                // println!(":(");
                 self.stat = value | 0x80
             },
             0xFF42 => self.scy = value,
@@ -371,6 +373,8 @@ impl Bus {
             0xFF47 => self.bgp = value,
             0xFF48 => self.opb0 = value,
             0xFF49 => self.opb1 = value,
+
+            0xFF56 => self.rp = value,// ir port
 
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,
