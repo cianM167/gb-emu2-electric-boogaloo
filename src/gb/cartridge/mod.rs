@@ -3,6 +3,9 @@
 mod header;
 mod mapper;
 mod rom_data;
+mod mbc1;
+mod mbc2;
+mod mbc3;
 mod loader;
 
 pub use loader::load_rom;

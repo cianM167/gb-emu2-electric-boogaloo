@@ -24,4 +24,4 @@ def first_divergence(log_a_path, log_b_path, offset=0):
     return None
 
 # Try offset=1 first since that's the usual case
-first_divergence("../log.txt", "trace.log", offset=0)
+first_divergence("../mine.log", "trace.log", offset=0)

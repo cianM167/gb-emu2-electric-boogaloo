@@ -35,5 +35,17 @@ impl CartHeader {
         )
     }
 
+    pub fn ram_size_bytes(&self) -> usize {
+        match self.ram_size {
+            0x00 => 0,
+            0x01 => unreachable!(),
+            0x02 => 8 * 1024,
+            0x03 => 32 * 1024,
+            0x04 => 128 * 1024,
+            0x05 => 64 * 1024,
+            _ => unreachable!(),
+        }
+    }
+
     
 }

@@ -209,7 +209,7 @@ impl Bus {
             0x0000..=0x7FFF => self.cart.mapper.read(addr),// cartridge address range
 
             0xA000..=0xBFFF => {//external ram on the cartridge
-                todo!()
+                self.cart.mapper.read(addr)
             }
 
             0x8000..=0x9FFF => {
@@ -229,7 +229,7 @@ impl Bus {
 
                 if self.joyp & 0b0001_0000 == 0 { // bit 4 low = d-pad selected
                     if self.joypad.right { 
-                        print!(":))))");
+                        // print!(":))))");
                         result &= !0b0001; 
                     }
                     if self.joypad.left  { result &= !0b0010; }
@@ -262,7 +262,7 @@ impl Bus {
 
             0xFF0F => self.iflag,
 
-            0xFF26 => 0x00,
+            0xFF11..=0xFF26 => 0x00,// audio unimplemented todo!!!
 
             0xFF30..=0xFF3F => 0x00,// todo
 
@@ -277,6 +277,7 @@ impl Bus {
                 // self.ly,//needs to be hacked to 0x90 to pass some tests
                 self.ly
             },
+            0xFF45 => self.lyc,
 
             0xFF47 => self.bgp,
             0xFF48 => self.opb0,
@@ -297,7 +298,7 @@ impl Bus {
 
             0xFF75..=0xFF7F => panic!(),
 
-            0xFFFF => self.ie | 0xE0,
+            0xFFFF => self.ie, //| 0xE0,
 
             _ => {
                 panic!("Unknown read: {addr:04X} shitting the bed")
@@ -307,10 +308,10 @@ impl Bus {
 
     pub fn write(&mut self, addr: u16, value: u8) {
         match addr {
-            0x0000..=0x7444 => self.cart.mapper.write(addr, value),// cartridge address range ignored by rom
+            0x0000..=0x7FFF => self.cart.mapper.write(addr, value),// cartridge address range ignored by rom
 
             0xA000..=0xBFFF => {//external ram on the cartridge
-                
+                self.cart.mapper.write(addr, value);
             }
 
             0x8000..=0x9FFF => {
@@ -365,6 +366,7 @@ impl Bus {
             0xFF42 => self.scy = value,
             0xFF43 => self.scx = value,
             0xFF44 => (),
+            0xFF45 => self.lyc = value,
 
             0xFF47 => self.bgp = value,
             0xFF48 => self.opb0 = value,
