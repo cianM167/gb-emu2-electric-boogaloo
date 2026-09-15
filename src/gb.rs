@@ -87,6 +87,38 @@ impl Tracer {
     }
 }
 
+struct Recorder {
+    writer: BufWriter<File>
+}
+
+impl Recorder {
+    fn new(path: &str) -> Self {
+        Self {
+            writer: BufWriter::with_capacity(1 << 20, File::create(path).unwrap())
+        }
+    }
+
+    fn record(&mut self, joypad: &Joypad) {
+        let right = joypad.right as u8;
+        let left = joypad.left as u8;
+        let up = joypad.up as u8;
+        let down = joypad.down as u8;
+        let a = joypad.a as u8;
+        let b = joypad.b as u8;
+        let select = joypad.select as u8;
+        let start = joypad.start as u8;
+
+        writeln!(
+            self.writer,
+            "{right}{left}{up}{down}{a}{b}{select}{start}"
+        ).unwrap()
+    }
+
+    fn flush(&mut self) {
+        self.writer.flush().unwrap()
+    }
+}
+
 pub struct GameBoy {
     cpu: Cpu,
     bus: Bus,
@@ -139,6 +171,7 @@ impl GameBoy {
     pub fn run(&mut self, args: &Args) {
         let script = args.input_script.as_ref().map(|p| InputScript::load(p));
         let mut tracer = args.trace_out.as_ref().map(|p| Tracer::new(p));
+        let mut recorder = args.recording.as_ref().map(|p| Recorder::new(p));
         let mut frame_count: u64 = 0;
 
         let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
@@ -193,6 +226,9 @@ impl GameBoy {
                     }
                 }
                 self.ppu.ready = false;
+
+                if let Some(r) = recorder.as_mut() { r.record(&self.bus.joypad); }
+
                 frame_count += 1;
             }
 
@@ -223,6 +259,7 @@ impl GameBoy {
         }
 
         if let Some(t) = tracer.as_mut() { t.flush(); }
+        if let Some(r) = recorder.as_mut() { r.flush(); }
 
         // while self.window.is_open() {
 

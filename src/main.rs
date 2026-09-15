@@ -11,6 +11,7 @@ struct Args {
     frames: Option<u64>,
     input_script: Option<String>,
     trace_out: Option<String>,
+    recording: Option<String>,
 }
 
 fn parse_args(raw: &[String]) -> Args {
@@ -20,12 +21,14 @@ fn parse_args(raw: &[String]) -> Args {
         frames: None,
         input_script: None,
         trace_out: None,
+        recording: None
     };
 
     let mut i = 2;
     while i < raw.len() {
         match raw[i].as_str() {
             "--headless" => a.headless = true,
+            "--record" => { i += 1; a.recording = Some(raw[i].parse().unwrap()); }
             "--frames" => { i += 1; a.frames = Some(raw[i].parse().unwrap()); }
             "--input-script" => { i += 1; a.input_script = Some(raw[i].clone()); }
             "--trace-out" => { i += 1; a.trace_out = Some(raw[i].clone()); }
