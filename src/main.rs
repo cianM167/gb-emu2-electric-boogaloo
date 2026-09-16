@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cart = load_rom(&rom_path)?;
 
     println!("Loaded ROM: {:?}", cart.header.title);
-    println!("Cart type: {:?}", cart.header.cartridge_type);
+    println!("Cart type: {:02X}", cart.header.cartridge_type);
 
     let unimplemented_count = opcodes()
         .iter()
