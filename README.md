@@ -10,7 +10,6 @@
 ## Screenshots
 <img width="640" height="577" alt="image" src="https://github.com/user-attachments/assets/f2976d1c-979e-4baf-b265-01d2a1d5b5ea" />
 <img width="640" height="575" alt="image" src="https://github.com/user-attachments/assets/97569bf0-a639-4335-a225-7bbe69464d62" />
--# crashes right after this
 
 
 ## Usage
