@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::gb::{bus::Bus, instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}}, registers};
 
 macro_rules! get_set  {
@@ -34,7 +36,7 @@ pub enum FlagBits {
     C = 0b0001_0000,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Registers {
     a: u8,
     b: u8,

@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CartHeader {
     pub title: String,
     pub cartridge_type: u8,

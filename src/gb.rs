@@ -1,9 +1,9 @@
-use std::{fs::{self, File, OpenOptions}, io::{BufWriter, Write}, thread::sleep, time::{Duration, Instant}};
+use std::{fs::{self, File, OpenOptions}, io::{BufWriter, Write}, result, thread::sleep, time::{Duration, Instant}};
 
-use crate::{Args, gb::{bus::{Bus, Joypad}, cartridge::Cartridge, cpu::Cpu, ppu::Ppu}};
+use crate::{Args, gb::{bus::{Bus, Joypad}, bus_state::BusState, cartridge::Cartridge, cpu::Cpu, ppu::Ppu}};
 use gilrs::{Button, Event, EventType, Gilrs};
 use minifb::{Key::{self, Enter}, Window, WindowOptions};
-use serde::de;
+use serde::{Deserialize, Serialize, de};
 
 pub mod ram;
 pub mod cpu;
@@ -12,6 +12,7 @@ pub mod registers;
 pub mod bus;
 pub mod cartridge;
 mod ppu;
+mod bus_state;
 
 const FRAME_TIME: Duration = Duration::from_nanos(16_742_706);
 
@@ -119,6 +120,23 @@ impl Recorder {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct SaveState {
+    cpu: Cpu,
+    ppu: Ppu,
+    bus_state: BusState,
+}
+
+impl SaveState {
+    pub fn new(cpu: &Cpu, ppu: &Ppu, bus: &Bus) -> Self {
+        Self {
+            cpu: *cpu,
+            ppu: *ppu,
+            bus_state: bus.to_state(),
+        }
+    }
+}
+
 pub struct GameBoy {
     cpu: Cpu,
     bus: Bus,
@@ -150,6 +168,32 @@ impl GameBoy {
             window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
+        }
+    }
+
+    fn save_state(&self) {
+        let state = SaveState::new(&self.cpu, &self.ppu, &self.bus);
+        
+        let title = &self.bus.cart.header.title;
+        let path = format!("saves/{title}.stat");
+
+        let bytes = postcard::to_allocvec(&state).expect("Serialize failed");
+        std::fs::write(path, bytes).expect("ruh roh, file save failed");
+    }
+
+    fn load_state(&mut self) {
+        let title = &self.bus.cart.header.title;
+        let path = &format!("saves/{title}.stat");
+
+        if let Ok(bytes) = std::fs::read(path) {
+            let state: SaveState = postcard::from_bytes(&bytes).expect("deserialize failed");
+
+            self.cpu = state.cpu;
+            self.ppu = state.ppu;
+            self.bus.load_state(state.bus_state);
+
+        } else {
+            eprintln!("error loading save state: {path}");
         }
     }
 
@@ -249,6 +293,14 @@ impl GameBoy {
                     self.bus.joypad.down   = keys.contains(&Key::Down)  || self.pad_state.down;
                     self.bus.joypad.left   = keys.contains(&Key::Left)  || self.pad_state.left;
                     self.bus.joypad.right  = keys.contains(&Key::Right) || self.pad_state.right;
+
+                    if keys.contains(&Key::F5) {
+                        self.save_state();
+                    }
+
+                    if keys.contains(&Key::F9) {
+                        self.load_state();
+                    }
                 }
 
                 if let Some(r) = recorder.as_mut() { r.record(&self.bus.joypad); }

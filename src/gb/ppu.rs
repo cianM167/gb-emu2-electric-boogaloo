@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 use crate::gb::{bus::Bus, ppu::PpuMode::OamScan};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum PpuMode {
     OamScan,
     Drawing,
@@ -15,12 +17,15 @@ struct SpriteAttr {
     flags: u8,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Ppu {
+    #[serde(with = "BigArray")]
     pub frame_buffer: [u32; 160 * 144],
     pub ready: bool,
     pub dot_counter: u16,
     ly: u8,
     mode: PpuMode,
+    #[serde(with = "BigArray")]
     bg_color_ids: [u8; 160],
     just_enabled: bool,
     was_on_last_step: bool,

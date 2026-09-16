@@ -1,13 +1,22 @@
-use crate::gb::cartridge::Cartridge;
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
+#[derive(Serialize, Deserialize)]
+pub struct Ppu {
+    #[serde(with = "BigArray")]
+    pub frame_buffer: [u32; 160 * 144],
+    // ...
+}
+use crate::gb::{bus_state::BusState, cartridge::Cartridge};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Joypad {
     pub a: bool, pub b: bool, pub select: bool, pub start: bool,
     pub up: bool, pub down: bool, pub left: bool, pub right: bool,
 }
 
+// #[derive(Serialize, Deserialize)]
 pub struct Bus {
-    cart: Cartridge,
+    pub cart: Cartridge,
 
     ie: u8,
     iflag: u8,
@@ -448,5 +457,59 @@ impl Bus {
                 self.tima = new_tima;
             }
         }
+    }
+
+    pub fn to_state(&self) -> BusState {
+        BusState {
+            vram: self.vram.to_vec(),
+            wram: self.wram.to_vec(),
+            hram: self.hram.to_vec(),
+            oam: self.oam.to_vec(),
+            joyp: self.joyp,
+            iflag: self.iflag,
+            ie: self.ie,
+            div: self.div,
+            tima: self.tima,
+            tma: self.tma,
+            tac: self.tac,
+            lcdc: self.lcdc,
+            stat: self.stat,
+            scy: self.scy,
+            scx: self.scx,
+            ly: self.ly,
+            bgp: self.bgp,
+            opb0: self.opb0,
+            opb1: self.opb1,
+            wy: self.wy,
+            wx: self.wx,
+            dma_source: self.dma_source,
+            joypad: self.joypad.clone(), 
+        }
+    }
+
+    pub fn load_state(&mut self, state: BusState) {
+        self.vram.copy_from_slice(&state.vram);
+        self.wram.copy_from_slice(&state.wram);
+        self.hram.copy_from_slice(&state.hram);
+        self.oam.copy_from_slice(&state.oam);
+        self.joyp = state.joyp;
+        self.iflag = state.iflag;
+        self.ie = state.ie;
+        self.div = state.div;
+        self.tima = state.tima;
+        self.tma = state.tma;
+        self.tac = state.tac;
+        self.lcdc = state.lcdc;
+        self.stat = state.stat;
+        self.scy = state.scy;
+        self.scx = state.scx;
+        self.ly = state.ly;
+        self.bgp = state.bgp;
+        self.opb0 = state.opb0;
+        self.opb1 = state.opb1;
+        self.wy = state.wy;
+        self.wx = state.wx;
+        self.dma_source = state.dma_source;
+        self.joypad = state.joypad;
     }
 }

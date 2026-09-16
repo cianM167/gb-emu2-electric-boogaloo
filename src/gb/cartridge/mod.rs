@@ -9,6 +9,7 @@ mod mbc3;
 mod loader;
 
 pub use loader::load_rom;
+use serde::{Deserialize, Serialize};
 
 use crate::gb::cartridge::{header::CartHeader, mapper::Mapper};
 

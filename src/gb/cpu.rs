@@ -1,8 +1,10 @@
 use std::{fs::{self, OpenOptions}, io::Write};
 
+use serde::{Deserialize, Serialize};
+
 use crate::gb::{bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Cpu {
     pub registers: Registers,
     pub debug: bool,
