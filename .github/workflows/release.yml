@@ -46,7 +46,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libxkbcommon-dev pkg-config libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev pkg-config libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libudev-dev
 
       - name: Build
         run: cargo build --release --verbose --target ${{ matrix.target }}
