@@ -2,11 +2,10 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*.*.*"   # triggers on tags like v1.0.0
-  pull_request:
     branches: [ "main" ]
-  push:
+    tags:
+      - "v*.*.*"
+  pull_request:
     branches: [ "main" ]
 
 env:
@@ -47,7 +46,7 @@ jobs:
         run: cargo build --release --verbose --target ${{ matrix.target }}
 
       - name: Run tests
-        if: matrix.target != 'aarch64-apple-darwin' # can't run ARM tests on an x86 runner
+        if: matrix.target != 'aarch64-apple-darwin'
         run: cargo test --verbose --target ${{ matrix.target }}
 
       - name: Rename binary
@@ -66,6 +65,8 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
