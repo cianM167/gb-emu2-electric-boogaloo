@@ -17,12 +17,12 @@ Either launch the executable as is or from your terminal
 ```
 
 ### Controls
-Arrow key -> dpad
-Enter -> start
-W -> a
-Q -> b
-E -> select
-F5 -> save state
-F9 -> load state
+* Arrow key -> dpad
+* Enter -> start
+* W -> a
+* Q -> b
+* E -> select
+* F5 -> save state
+* F9 -> load state
 
 Controllers are also supported if you want to use one instead.
