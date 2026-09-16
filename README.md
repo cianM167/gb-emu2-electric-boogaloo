@@ -1,4 +1,4 @@
-### Game Boy emulator
+# Game Boy emulator
 ## Accuracy
 * Cart type 0: Fully implemented all games work to my knowledge.
 * Cart type 1: Not tested likely very functional.
@@ -16,7 +16,7 @@ Either launch the executable as is or from your terminal
 ./gb_emu2
 ```
 
-# Controls
+### Controls
 Arrow key -> dpad
 Enter -> start
 W -> a
