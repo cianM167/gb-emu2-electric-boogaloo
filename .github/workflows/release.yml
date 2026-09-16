@@ -19,19 +19,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: gb-emu2
+            artifact_name: gb_emu2
             asset_name: gb-emu-linux-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: gb-emu2.exe
+            artifact_name: gb_emu2.exe
             asset_name: gb-emu-windows-x86_64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: gb-emu2
+            artifact_name: gb_emu2
             asset_name: gb-emu-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: gb-emu2
+            artifact_name: gb_emu2
             asset_name: gb-emu-macos-arm64
 
     runs-on: ${{ matrix.os }}
