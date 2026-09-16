@@ -288,7 +288,7 @@ impl GameBoy {
                     self.bus.joypad.a      = keys.contains(&Key::W)     || self.pad_state.a;
                     self.bus.joypad.b      = keys.contains(&Key::Q)     || self.pad_state.b;
                     self.bus.joypad.start  = keys.contains(&Key::Enter) || self.pad_state.start;
-                    self.bus.joypad.select = keys.contains(&Key::C)     || self.pad_state.select;
+                    self.bus.joypad.select = keys.contains(&Key::E)     || self.pad_state.select;
                     self.bus.joypad.up     = keys.contains(&Key::Up)    || self.pad_state.up;
                     self.bus.joypad.down   = keys.contains(&Key::Down)  || self.pad_state.down;
                     self.bus.joypad.left   = keys.contains(&Key::Left)  || self.pad_state.left;
