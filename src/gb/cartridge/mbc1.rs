@@ -86,7 +86,7 @@ impl Mapper for Mbc1 {
             }
 
             0x2000..=0x3FFF => {
-                self.rom_bank_low = value & 0x1F;
+                self.rom_bank_low = value
             }
 
             0x4000..=0x5FFF => {
