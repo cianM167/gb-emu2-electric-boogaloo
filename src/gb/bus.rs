@@ -231,9 +231,9 @@ impl Bus {
                 self.wram[(addr - 0xC000) as usize]
             }
 
-            // 0xE000..=0xFDFF => {
-            //     self.wram[(addr - 0xE000) as usize]
-            // }
+            0xE000..=0xFDFF => {// leave commented out if can
+                self.wram[(addr - 0xE000) as usize]
+            }
 
             0xFF00 => {
                 let mut result = (self.joyp & 0xF0) | 0x0F; // start with "nothing pressed" (all 1s) in low nibble
