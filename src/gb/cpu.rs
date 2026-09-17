@@ -41,6 +41,9 @@ impl Cpu {
         // }
 
         let mut cycles = self.handle_interrupts(bus);
+        // if cycles > 0 {
+        //     return cycles;// to align with same boy logs
+        // }
 
         if self.halted {
             let pending = bus.get_ie() & bus.get_iflag();
