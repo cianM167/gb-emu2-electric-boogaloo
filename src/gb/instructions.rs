@@ -933,6 +933,40 @@ fn sbc_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn sbc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::RegMem(dst, mem) = instr.operands else { unreachable!() };
+    let carry_in = cpu.registers.get_flag(FlagBits::C) as u16;
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let reg1 = cpu.registers.get8(dst);
+    let reg2 = bus.read(addr);
+
+    let diff16 = (reg1 as u16)
+        .wrapping_sub(reg2 as u16)
+        .wrapping_sub(carry_in);
+    let result = (diff16 & 0xFF) as u8;
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, true);
+    cpu.registers.set_flag_to(
+        FlagBits::H,
+        (reg1 as u16 & 0x0F) < (reg2 as u16 & 0x0F) + carry_in,
+    );
+    cpu.registers.set_flag_to(
+        FlagBits::C,
+        (reg1 as u16) < (reg2 as u16) + carry_in,
+    );
+
+    cpu.registers.set8(dst, result);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 // jp instructions
 
 fn jp_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
@@ -1852,6 +1886,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
 
         ("SBC", Operands::RegReg(_, _)) => sbc_r_r,
         ("SBC", Operands::RegImm8(_)) => sbc_r_n8,
+        ("SBC", Operands::RegMem(_, _)) => sbc_r_mem,
 
         ("AND", Operands::RegReg(_, _)) => and_r_r,
         ("AND", Operands::RegImm8(_)) => and_r_n8,
