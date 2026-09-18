@@ -180,6 +180,7 @@ impl GameBoy {
 
         let bytes = postcard::to_allocvec(&state).expect("Serialize failed");
         std::fs::write(path, bytes).expect("ruh roh, file save failed");
+        println!("State saved");
     }
 
     fn load_state(&mut self) {
@@ -192,6 +193,7 @@ impl GameBoy {
             self.cpu = state.cpu;
             self.ppu = state.ppu;
             self.bus.load_state(state.bus_state);
+            println!("State loaded");
 
         } else {
             eprintln!("error loading save state: {path}");
