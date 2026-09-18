@@ -1302,6 +1302,31 @@ fn rr_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn rr_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let old = bus.read(addr);
+    let old_carry = cpu.registers.get_flag(FlagBits::C);
+
+    let carry = (old & 0x01) != 0;
+
+    let result = (old >> 1) | ((old_carry as u8) << 7);
+    bus.write(addr, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn rrc_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg(reg) = instr.operands else { unreachable!() };
 
@@ -1926,6 +1951,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("SRL", Operands::Reg(_)) => srl_r,
 
         ("RR", Operands::Reg(_)) => rr_r,
+        ("RR", Operands::Mem(_)) => rr_mem,
         ("RRC", Operands::Reg(_)) => rrc_r,
         ("RRCA", Operands::None) => rrca,
         ("RRC", Operands::Mem(_)) => rrc_mem,
