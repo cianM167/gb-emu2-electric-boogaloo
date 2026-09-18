@@ -1,12 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-#[derive(Serialize, Deserialize)]
-pub struct Ppu {
-    #[serde(with = "BigArray")]
-    pub frame_buffer: [u32; 160 * 144],
-    // ...
-}
-use crate::gb::{bus_state::BusState, cartridge::Cartridge};
+
+
+use crate::gb::{apu::Apu, bus_state::BusState, cartridge::Cartridge};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Joypad {
@@ -17,6 +13,7 @@ pub struct Joypad {
 // #[derive(Serialize, Deserialize)]
 pub struct Bus {
     pub cart: Cartridge,
+    apu: Apu,
 
     ie: u8,
     iflag: u8,
@@ -35,6 +32,8 @@ pub struct Bus {
     wram: [u8; 0x2000],
     oam: [u8; 0xA0],
     hram: [u8; 0x7F],
+
+    wave_ram: [u8; 0x10],
 
     joyp: u8,
 
@@ -60,6 +59,7 @@ impl Bus {
     pub fn new(cart: Cartridge) -> Self {
         Self {
             cart,
+            apu: Apu::default(),
 
             ie: 0,
             iflag: 0xE1,
@@ -78,6 +78,8 @@ impl Bus {
             wram: [0; 0x2000],
             oam: [0; 0xA0],
             hram: [0xFF; 0x7F],
+
+            wave_ram: [0; 0x10],
 
             joyp: 0x3F,
 
@@ -273,9 +275,33 @@ impl Bus {
 
             0xFF0F => self.iflag,
 
-            0xFF11..=0xFF26 => 0x00,// audio unimplemented todo!!!
+            0xFF10 => self.apu.ch1.sweep,
+            0xFF11 => self.apu.ch1.duty_len,
+            0xFF12 => self.apu.ch1.envelope,
+            0xFF13 => unreachable!(),
+            0xFF14 => self.apu.ch1.freq_hi_ctrl & 0x40,
 
-            0xFF30..=0xFF3F => 0x00,// todo
+            0xFF16 => self.apu.ch2.duty_len,
+            0xFF17 => self.apu.ch2.envelope,
+            0xFF18 => unreachable!(),
+            0xFF19 => self.apu.ch2.freq_hi_ctrl & 0x40,
+
+            0xFF1A => self.apu.ch3.dac,
+            0xFF1B => unreachable!(),
+            0xFF1C => self.apu.ch3.envelope,
+            0xFF1D => unreachable!(),
+            0xFF1E => self.apu.ch3.freq_hi_ctrl & 0x40,
+
+            0xFF20 => self.apu.ch4.duty_len,
+            0xFF21 => self.apu.ch4.envelope,
+            0xFF22 => self.apu.ch4.freq_lo,
+            0xFF23 => self.apu.ch4.freq_hi_ctrl & 0x40,
+
+            0xFF24 => self.apu.nr50,
+            0xFF25 => self.apu.nr51,
+            0xFF26 => self.apu.nr52,
+
+            0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30],
 
             0xFF40 => {
                 // println!("LCDC UNFINISHED");
@@ -360,11 +386,33 @@ impl Bus {
 
             0xFF0F => self.iflag = value,
 
-            0xFF10..=0xFF26 => (
-                // println!("WARNING AUDIO IS UNFINISHED AND MAY CAUSE ERRORS")
-            ),
+            0xFF10 => self.apu.ch1.sweep = value,
+            0xFF11 => self.apu.ch1.duty_len = value & 0xC0,
+            0xFF12 => self.apu.ch1.envelope = value,
+            0xFF13 => self.apu.ch1.freq_lo = value,
+            0xFF14 => self.apu.ch1.freq_hi_ctrl = value,
 
-            0xFF30..=0xFF3F => (),// todo
+            0xFF16 => self.apu.ch2.duty_len = value,
+            0xFF17 => self.apu.ch2.envelope = value & 0xC0,
+            0xFF18 => self.apu.ch2.freq_lo = value,
+            0xFF19 => self.apu.ch2.freq_hi_ctrl = value,
+
+            0xFF1A => self.apu.ch3.dac = value,
+            0xFF1B => self.apu.ch3.duty_len = value,
+            0xFF1C => self.apu.ch3.envelope = value,
+            0xFF1D => self.apu.ch3.freq_lo = value,
+            0xFF1E => self.apu.ch3.freq_hi_ctrl = value,
+
+            0xFF20 => self.apu.ch4.duty_len = value,
+            0xFF21 => self.apu.ch4.envelope = value,
+            0xFF22 => self.apu.ch4.freq_lo = value,
+            0xFF23 => self.apu.ch4.freq_hi_ctrl = value,
+
+            0xFF24 => self.apu.nr50 = value,
+            0xFF25 => self.apu.nr51 = value,
+            0xFF26 => self.apu.nr52 = value & 0x80,
+
+            0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30] = value,
 
             0xFF40 => {
                 // println!("LCDC UNFINISHED");
