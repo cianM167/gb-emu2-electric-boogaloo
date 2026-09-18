@@ -13,8 +13,9 @@ pub mod bus;
 pub mod cartridge;
 mod ppu;
 mod bus_state;
+pub mod apu;
 
-const FRAME_TIME: Duration = Duration::from_nanos(16_742_706 / 4);
+const FRAME_TIME: Duration = Duration::from_nanos(16_742_706);
 
 #[derive(Default)]
 struct PadState {
