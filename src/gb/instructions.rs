@@ -1175,7 +1175,7 @@ fn ccf(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
 // misc
 
-fn halt(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+fn halt(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// bugged?
     let pending = bus.get_ie() & bus.get_iflag() != 0;
 
     if cpu.ime && pending {

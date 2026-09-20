@@ -7,6 +7,7 @@ mod mbc1;
 mod mbc2;
 mod mbc3;
 mod loader;
+mod abi;
 
 pub use loader::load_rom;
 use serde::{Deserialize, Serialize};

@@ -66,7 +66,7 @@ impl Bus {
 
             ly: 0,
             lyc: 0,
-            stat: 0x80,
+            stat: 0x85,
 
             div: 0x0000,
             tima: 0,
@@ -83,7 +83,7 @@ impl Bus {
 
             joyp: 0x3F,
 
-            lcdc: 0x00,
+            lcdc: 0x91,
             bgp: 0xFC,
             opb0: 0xFF,
             opb1: 0xFF,
@@ -286,7 +286,7 @@ impl Bus {
             0xFF18 => unreachable!(),
             0xFF19 => self.apu.ch2.freq_hi_ctrl & 0x40,
 
-            0xFF1A => self.apu.ch3.dac,
+            0xFF1A => (self.apu.ch3.dac_enabled as u8) << 7,
             0xFF1B => unreachable!(),
             0xFF1C => self.apu.ch3.envelope,
             0xFF1D => unreachable!(),
@@ -397,7 +397,7 @@ impl Bus {
             0xFF18 => self.apu.ch2.freq_lo = value,
             0xFF19 => self.apu.ch2.freq_hi_ctrl = value,
 
-            0xFF1A => self.apu.ch3.dac = value,
+            0xFF1A => self.apu.ch3.dac_enabled = value & 80 == 1,
             0xFF1B => self.apu.ch3.duty_len = value,
             0xFF1C => self.apu.ch3.envelope = value,
             0xFF1D => self.apu.ch3.freq_lo = value,
