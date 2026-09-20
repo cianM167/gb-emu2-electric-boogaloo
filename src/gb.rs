@@ -15,7 +15,7 @@ mod ppu;
 mod bus_state;
 pub mod apu;
 
-const FRAME_TIME: Duration = Duration::from_nanos(16_742_706);
+const FRAME_TIME: Duration = Duration::from_nanos(16_742_706 / 2);
 
 #[derive(Default)]
 struct PadState {
@@ -80,7 +80,7 @@ impl Tracer {
 
         writeln!(
             self.writer,
-            "A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{m0:02X},{m1:02X},{m2:02X},{m3:02X} LCDC:{lcdc:02X}"
+            "A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{m0:02X},{m1:02X},{m2:02X},{m3:02X} LCDC:{lcdc:02X} LY:{ly:02X}"
         ).unwrap()
     }
 
@@ -166,7 +166,7 @@ impl GameBoy {
             cpu: Cpu::new(false),
             bus: Bus::new(cart),
             ppu: Ppu::new(),
-            window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
+            window: Window::new("Ferro boy", 640 * 2, 576 * 2, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
         }
@@ -227,30 +227,32 @@ impl GameBoy {
             if !args.headless && !self.window.is_open() { break; }
             if let Some(max) = args.frames { if frame_count >= max { break; } }
 
-            if let Some(t) = tracer.as_mut() {
-                let pc = self.cpu.registers.get_pc();
+            if !self.cpu.halted {
+                if let Some(t) = tracer.as_mut() {
+                    let pc = self.cpu.registers.get_pc();
 
-                let regs = (
-                    self.cpu.registers.get_a(),
-                    self.cpu.registers.get_f(),
-                    self.cpu.registers.get_b(),
-                    self.cpu.registers.get_c(),
-                    self.cpu.registers.get_d(),
-                    self.cpu.registers.get_e(),
-                    self.cpu.registers.get_h(),
-                    self.cpu.registers.get_l(),
-                    self.cpu.registers.get_sp(),
-                    self.cpu.registers.get_pc() + 1,
-                );
+                    let regs = (
+                        self.cpu.registers.get_a(),
+                        self.cpu.registers.get_f(),
+                        self.cpu.registers.get_b(),
+                        self.cpu.registers.get_c(),
+                        self.cpu.registers.get_d(),
+                        self.cpu.registers.get_e(),
+                        self.cpu.registers.get_h(),
+                        self.cpu.registers.get_l(),
+                        self.cpu.registers.get_sp(),
+                        self.cpu.registers.get_pc() + 1,
+                    );
 
-                let pcmem = (                   
-                    self.bus.read(pc),
-                    self.bus.read(pc + 1),
-                    self.bus.read(pc + 2),
-                    self.bus.read(pc + 3),
-                );
-                let ppu_stuff = (self.bus.get_ly(), self.bus.get_stat(), self.bus.get_lcdc());
-                t.log(regs, pcmem, ppu_stuff);
+                    let pcmem = (                   
+                        self.bus.read(pc),
+                        self.bus.read(pc + 1),
+                        self.bus.read(pc + 2),
+                        self.bus.read(pc + 3),
+                    );
+                    let ppu_stuff = (self.bus.get_ly(), self.bus.get_stat(), self.bus.get_lcdc());
+                    t.log(regs, pcmem, ppu_stuff);
+                }
             }
 
             let cycles = self.cpu.step(&mut self.bus);

@@ -106,17 +106,17 @@ impl Cpu {
                 bus.write_u16(self.registers.get_sp(), self.registers.get_pc());
 
                 let pc = match i {
-                    0 => {
+                    0 => {// vblank
                         // println!(
                         //     "FRAME {} | PC:{:04X} IME:{} IE:{:02X} IF:{:02X} JOYP:{:02X} DIV:{:02X} TIMA:{:02X}",
                         //     bus.get_frame(), self.registers.get_pc(), true, ie, log_iflag, bus.get_joyp(), bus.get_div(), bus.get_tima()
                         // );
                         0x0040
                     },
-                    1 => 0x0048,
-                    2 => 0x0050,
-                    3 => 0x0058,
-                    4 => 0x0060,
+                    1 => 0x0048,// lcd
+                    2 => 0x0050,// timer
+                    3 => 0x0058,// serial
+                    4 => 0x0060,// joypad
                     _ => unreachable!(),
                 };
 

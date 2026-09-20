@@ -1,5 +1,7 @@
 use std::{env, error::Error};
-
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use minifb::KeyRepeat::No;
+use ringbuf::{HeapProd, HeapRb};
 use rfd::FileDialog;
 
 use crate::gb::{GameBoy, cartridge::load_rom, instructions::{opcodes, opcodes_cb, unimplemented}};
@@ -13,6 +15,7 @@ struct Args {
     input_script: Option<String>,
     trace_out: Option<String>,
     recording: Option<String>,
+    custom_cart: Option<String>
 }
 
 fn parse_args(raw: &[String]) -> Args {
@@ -21,7 +24,8 @@ fn parse_args(raw: &[String]) -> Args {
         frames: None,
         input_script: None,
         trace_out: None,
-        recording: None
+        recording: None,
+        custom_cart: None,
     };
 
     let mut i = 2;
@@ -32,6 +36,7 @@ fn parse_args(raw: &[String]) -> Args {
             "--frames" => { i += 1; a.frames = Some(raw[i].parse().unwrap()); }
             "--input-script" => { i += 1; a.input_script = Some(raw[i].clone()); }
             "--trace-out" => { i += 1; a.trace_out = Some(raw[i].clone()); }
+            "--custom-cart" => { i += 1; a.custom_cart = Some(raw[i].clone()); }
             _ => {}
         }
         i += 1;
@@ -60,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         pick_rom().ok_or("No ROM selected")?
     };
 
-    let cart = load_rom(&rom_path)?;
+    let cart = load_rom(&rom_path, args.custom_cart.as_deref())?;
 
     println!("Loaded ROM: {:?}", cart.header.title);
     println!("Cart type: {:02X}", cart.header.cartridge_type);
