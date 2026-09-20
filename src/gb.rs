@@ -223,13 +223,24 @@ impl GameBoy {
 
         let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
         
+        let mut last_report = Instant::now();
+        let mut cycles_this_second = 0;
+        let mut frames_this_second = 0;
+
         loop {
             if !args.headless && !self.window.is_open() { break; }
             if let Some(max) = args.frames { if frame_count >= max { break; } }
 
-            if !self.cpu.halted {
-                if let Some(t) = tracer.as_mut() {
-                    let pc = self.cpu.registers.get_pc();
+            let now = Instant::now();
+            if now.duration_since(last_report) >= Duration::from_secs(1) {
+                println!("cycles/sec: {}, frames/sec: {}", cycles_this_second, frames_this_second);
+                cycles_this_second = 0;
+                frames_this_second = 0;
+                last_report = now;
+            }
+
+            if let Some(t) = tracer.as_mut() {
+                let pc = self.cpu.registers.get_pc();
 
                     let regs = (
                         self.cpu.registers.get_a(),
@@ -256,6 +267,7 @@ impl GameBoy {
             }
 
             let cycles = self.cpu.step(&mut self.bus);
+            cycles_this_second += cycles;
 
             self.bus.step_timer(cycles);
             self.ppu.step(cycles, &mut self.bus);
@@ -273,6 +285,8 @@ impl GameBoy {
                     if Instant::now() > next_frame_time + FRAME_TIME {
                         next_frame_time = Instant::now() + FRAME_TIME;
                     }
+
+                    frames_this_second += 1;
                 }
                 self.ppu.ready = false;
 
