@@ -5,6 +5,7 @@
 * Cart type 2: Same as type 1.
 * Cart type 3: Cpu correct, error in lcd emulation in **some** games breaks display.
 * Cart type 5/6: Working but with lcd start issues.
+* Cart type 13: working but lacks rtc
 * Other cart types: Some can boot with the wrong mbc type but don't get much further than that.
 
 ## Screenshots
