@@ -20,6 +20,11 @@ Either launch the executable as is or from your terminal
 ```bash
 ./gb_emu2
 ```
+`--headless`: Runs the emulator with no visual output
+`--record <filename>`: Records your inputs to the specified file
+`--frames`: Specify how many frames the emulator should run for before closing
+`--input-script <filename>`: Give the emulator inputs to be played back
+`--trace-out <filename>`: Logs cpu state to the provided file
 
 ### Controls
 * Arrow key -> dpad
