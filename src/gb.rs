@@ -170,7 +170,7 @@ impl GameBoy {
             cpu: Cpu::new(false),
             bus: Bus::new(cart),
             ppu: Ppu::new(),
-            window: Window::new("Ferro boy", 640 * 2, 576 * 2, WindowOptions::default()).unwrap(),
+            window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
         }
