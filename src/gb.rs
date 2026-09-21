@@ -15,7 +15,11 @@ mod ppu;
 mod bus_state;
 pub mod apu;
 
-const FRAME_TIME: Duration = Duration::from_nanos(16_742_706 / 2);
+const FRAME_TIME: Duration = Duration::from_nanos(16_742_706);
+
+static mut VBLANK_COUNT: u64 = 0;
+static mut STAT_COUNT: u64 = 0;
+static mut TIMER_COUNT: u64 = 0;
 
 #[derive(Default)]
 struct PadState {
@@ -224,55 +228,72 @@ impl GameBoy {
         let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
         
         let mut last_report = Instant::now();
-        let mut cycles_this_second = 0;
+        let mut cycles_this_second: u32 = 0;
         let mut frames_this_second = 0;
+
+        let mut turbo:Option<u32> = None;
+        
 
         loop {
             if !args.headless && !self.window.is_open() { break; }
             if let Some(max) = args.frames { if frame_count >= max { break; } }
 
-            let now = Instant::now();
-            if now.duration_since(last_report) >= Duration::from_secs(1) {
-                println!("cycles/sec: {}, frames/sec: {}", cycles_this_second, frames_this_second);
-                cycles_this_second = 0;
-                frames_this_second = 0;
-                last_report = now;
-            }
+            // let now = Instant::now();
+            // if now.duration_since(last_report) >= Duration::from_secs(1) {
+            //     let (vblank, stat, timer) = unsafe {
+            //         (VBLANK_COUNT, STAT_COUNT, TIMER_COUNT)
+            //     };
+            //     println!("cycles/sec: {}, frames/sec: {}, vblank count/sec: {}, stat count/sec: {}, timer count: {}", cycles_this_second, frames_this_second, vblank, stat, timer);
+            //     cycles_this_second = 0;
+            //     frames_this_second = 0;
+            //     unsafe {
+            //         VBLANK_COUNT = 0;
+            //         STAT_COUNT = 0;
+            //         TIMER_COUNT = 0;
+            //     }
+            //     last_report = now;
+                    
+            // }
 
             if let Some(t) = tracer.as_mut() {
                 let pc = self.cpu.registers.get_pc();
 
-                    let regs = (
-                        self.cpu.registers.get_a(),
-                        self.cpu.registers.get_f(),
-                        self.cpu.registers.get_b(),
-                        self.cpu.registers.get_c(),
-                        self.cpu.registers.get_d(),
-                        self.cpu.registers.get_e(),
-                        self.cpu.registers.get_h(),
-                        self.cpu.registers.get_l(),
-                        self.cpu.registers.get_sp(),
-                        self.cpu.registers.get_pc() + 1,
-                    );
+                let regs = (
+                    self.cpu.registers.get_a(),
+                    self.cpu.registers.get_f(),
+                    self.cpu.registers.get_b(),
+                    self.cpu.registers.get_c(),
+                    self.cpu.registers.get_d(),
+                    self.cpu.registers.get_e(),
+                    self.cpu.registers.get_h(),
+                    self.cpu.registers.get_l(),
+                    self.cpu.registers.get_sp(),
+                    self.cpu.registers.get_pc() + 1,
+                );
 
-                    let pcmem = (                   
-                        self.bus.read(pc),
-                        self.bus.read(pc + 1),
-                        self.bus.read(pc + 2),
-                        self.bus.read(pc + 3),
-                    );
-                    let ppu_stuff = (self.bus.get_ly(), self.bus.get_stat(), self.bus.get_lcdc());
-                    t.log(regs, pcmem, ppu_stuff);
-                }
+                let pcmem = (                   
+                    self.bus.read(pc),
+                    self.bus.read(pc + 1),
+                    self.bus.read(pc + 2),
+                    self.bus.read(pc + 3),
+                );
+                let ppu_stuff = (self.bus.get_ly(), self.bus.get_stat(), self.bus.get_lcdc());
+                t.log(regs, pcmem, ppu_stuff);
             }
 
             let cycles = self.cpu.step(&mut self.bus);
-            cycles_this_second += cycles;
+            cycles_this_second += cycles as u32;
 
             self.bus.step_timer(cycles);
             self.ppu.step(cycles, &mut self.bus);
 
             if self.ppu.ready {
+                let frame_time = if let Some(turbo) = turbo {
+                    FRAME_TIME / turbo
+                } else {
+                    FRAME_TIME
+                };
+
                 if !args.headless {
                     self.window.update_with_buffer(&self.ppu.frame_buffer, 160, 144).unwrap();
 
@@ -280,10 +301,10 @@ impl GameBoy {
                     if now < next_frame_time {
                         sleep(next_frame_time - now);
                     }
-                    next_frame_time += FRAME_TIME;
+                    next_frame_time += frame_time;
 
-                    if Instant::now() > next_frame_time + FRAME_TIME {
-                        next_frame_time = Instant::now() + FRAME_TIME;
+                    if Instant::now() > next_frame_time + frame_time {
+                        next_frame_time = Instant::now() + frame_time;
                     }
 
                     frames_this_second += 1;
@@ -319,6 +340,19 @@ impl GameBoy {
 
                     if keys.contains(&Key::F9) {
                         self.load_state();
+                    }
+
+                    let keys_pressed = self.window.get_keys_pressed(minifb::KeyRepeat::No);
+
+                    if keys_pressed.contains(&Key::F3) {
+                        turbo = Some(turbo.map_or(2, |t| t * 2));
+                    }
+
+                    if keys_pressed.contains(&Key::F2) {
+                        turbo = turbo.and_then(|t| {
+                            let new_speed = t / 2;
+                            if new_speed != 0 { Some(new_speed) } else { None }
+                        });
                     }
                 }
 

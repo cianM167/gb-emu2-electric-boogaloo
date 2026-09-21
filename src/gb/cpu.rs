@@ -2,7 +2,7 @@ use std::{fs::{self, OpenOptions}, io::Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::gb::{bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
+use crate::gb::{STAT_COUNT, TIMER_COUNT, VBLANK_COUNT, bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Cpu {
@@ -111,10 +111,17 @@ impl Cpu {
                         //     "FRAME {} | PC:{:04X} IME:{} IE:{:02X} IF:{:02X} JOYP:{:02X} DIV:{:02X} TIMA:{:02X}",
                         //     bus.get_frame(), self.registers.get_pc(), true, ie, log_iflag, bus.get_joyp(), bus.get_div(), bus.get_tima()
                         // );
+                        unsafe { VBLANK_COUNT += 1; }
                         0x0040
                     },
-                    1 => 0x0048,// lcd
-                    2 => 0x0050,// timer
+                    1 => {
+                        unsafe { STAT_COUNT += 1; }
+                        0x0048
+                    },// lcd/stat
+                    2 => {
+                        unsafe { TIMER_COUNT += 1; }
+                        0x0050
+                    },// timer
                     3 => 0x0058,// serial
                     4 => 0x0060,// joypad
                     _ => unreachable!(),

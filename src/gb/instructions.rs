@@ -661,7 +661,7 @@ fn cp_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let reg1 = cpu.registers.get8(dest);
     let reg2 = cpu.registers.get8(src);
 
-    let diff16 = reg1 as u16 - reg2 as u16;
+    let diff16 = reg1.wrapping_sub(reg2);
     let result = (diff16 & 0xFF) as u8;
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
