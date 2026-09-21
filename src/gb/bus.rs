@@ -47,6 +47,7 @@ pub struct Bus {
     wy: u8,
 
     serial_data: u8,
+    serial_in: u8,
     rp: u8,
 
     // inaccurate bullshit
@@ -93,6 +94,7 @@ impl Bus {
             wy: 0,
 
             serial_data: 0,
+            serial_in: 0,
             rp: 0,
 
             dma_source: 0,
@@ -267,6 +269,7 @@ impl Bus {
             }
 
             0xFF01 => self.serial_data,
+            0xFF02 => self.serial_in,
 
             0xFF04 => self.read_div(),
             0xFF05 => self.tima,
