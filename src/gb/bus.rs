@@ -33,6 +33,8 @@ pub struct Bus {
     oam: [u8; 0xA0],
     hram: [u8; 0x7F],
 
+    cgb_wram_bank: u8,
+
     wave_ram: [u8; 0x10],
 
     joyp: u8,
@@ -79,6 +81,7 @@ impl Bus {
             oam: [0; 0xA0],
             hram: [0xFF; 0x7F],
 
+            cgb_wram_bank: 0,
             wave_ram: [0; 0x10],
 
             joyp: 0x3F,
@@ -323,6 +326,8 @@ impl Bus {
             0xFF4A => self.wy,
             0xFF4B => self.wx,
 
+            0xFF70 => self.cgb_wram_bank,
+
             0xFF80..=0xFFFE => {// hram
                 self.hram[(addr - 0xFF80) as usize]
             }
@@ -391,6 +396,7 @@ impl Bus {
             0xFF12 => self.apu.ch1.envelope = value,
             0xFF13 => self.apu.ch1.freq_lo = value,
             0xFF14 => self.apu.ch1.freq_hi_ctrl = value,
+            0xFF15 => (),// do nothing broken todo
 
             0xFF16 => self.apu.ch2.duty_len = value,
             0xFF17 => self.apu.ch2.envelope = value & 0xC0,
@@ -402,6 +408,7 @@ impl Bus {
             0xFF1C => self.apu.ch3.envelope = value,
             0xFF1D => self.apu.ch3.freq_lo = value,
             0xFF1E => self.apu.ch3.freq_hi_ctrl = value,
+            0xFF1F => (),// do nothing broken todo
 
             0xFF20 => self.apu.ch4.duty_len = value,
             0xFF21 => self.apu.ch4.envelope = value,
@@ -432,6 +439,8 @@ impl Bus {
             0xFF49 => self.opb1 = value,
 
             0xFF56 => self.rp = value,// ir port
+
+            0xFF70 => self.cgb_wram_bank = value,
 
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,

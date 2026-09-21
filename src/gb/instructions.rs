@@ -1282,6 +1282,29 @@ fn srl_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn srl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let old = bus.read(addr);
+    let carry = old & 0x01;
+
+    let result = old >> 1;
+    bus.write(addr, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, carry != 0);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn rr_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg(dst) = instr.operands else { unreachable!() };
 
@@ -1352,7 +1375,7 @@ fn rrca(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result = (old >> 1) | ((carry as u8) << 7);
     cpu.registers.set_a(result);
 
-    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::Z, false);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
@@ -1404,6 +1427,31 @@ fn rl_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn rl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let old = bus.read(addr);
+    let old_carry = cpu.registers.get_flag(FlagBits::C);
+
+    let carry = (old & 0x80) != 0;
+
+    let result = (old << 1) + old_carry as u8;
+    bus.write(addr, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn rla(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let old = cpu.registers.get_a();
     let old_carry = cpu.registers.get_flag(FlagBits::C);
@@ -1413,7 +1461,7 @@ fn rla(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result = (old << 1) + old_carry as u8;
     cpu.registers.set_a(result);
 
-    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::Z, false);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
@@ -1476,6 +1524,30 @@ fn rlca(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
+fn rlc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let reg = bus.read(addr);
+
+    let highest = (reg & 0b1000_0000) >> 7;
+    let result = (reg << 1) + highest;
+
+    bus.write(addr, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, highest != 0);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn sla_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg(src) = instr.operands else { unreachable!() };
 
@@ -1526,10 +1598,36 @@ fn sra_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     let reg = cpu.registers.get8(src);
 
+    let bit7 = reg >> 7 & 1 == 1;
     let carry = reg & 0x01 != 0;
 
-    let result = reg >> 1;
+    let result = (reg >> 1) | (bit7 as u8) << 7;
     cpu.registers.set8(src, result);
+
+    cpu.registers.set_flag_to(FlagBits::Z, result == 0);
+    cpu.registers.set_flag_to(FlagBits::N, false);
+    cpu.registers.set_flag_to(FlagBits::H, false);
+    cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
+fn sra_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    let Operands::Mem(mem) = instr.operands else { unreachable!() };
+
+    let addr = match mem {
+        MemTarget::Reg16(reg) => cpu.registers.get16(reg),
+        _ => unreachable!(),
+    };
+
+    let reg = bus.read(addr);
+
+    let bit7 = reg >> 7 & 1 == 1;
+    let carry = reg & 0x01 != 0;
+
+    let result = (reg >> 1) | (bit7 as u8) << 7;
+    bus.write(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
@@ -1949,6 +2047,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         // CB instructions
 
         ("SRL", Operands::Reg(_)) => srl_r,
+        ("SRL", Operands::Mem(_)) => srl_mem,
 
         ("RR", Operands::Reg(_)) => rr_r,
         ("RR", Operands::Mem(_)) => rr_mem,
@@ -1958,9 +2057,11 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("RRA", Operands::None) => rra,
 
         ("RL", Operands::Reg(_)) => rl_r,
+        ("RL", Operands::Mem(_)) => rl_mem,
         ("RLA", Operands::None) => rla,
         ("RLC", Operands::Reg(_)) => rlc,
         ("RLCA", Operands::None) => rlca,
+        ("RLC", Operands::Mem(_)) => rlc_mem,
 
         ("SWAP", Operands::Reg(_)) => swap_r,
         ("SWAP", Operands::Mem(_)) => swap_mem,
@@ -1969,6 +2070,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("SLA", Operands::Mem(_)) => sla_mem,
 
         ("SRA", Operands::Reg(_)) => sra_r,
+        ("SRA", Operands::Mem(_)) => sra_mem,
 
         ("BIT", Operands::BitReg(_, _)) => bit_r,
         ("BIT", Operands::BitMem(_, _)) => bit_mem,
