@@ -59,7 +59,7 @@ struct HostState {
 /// resolved once at load time rather than looked up by name per call.
 pub struct CartridgePlugin {
     store: RefCell<Store<HostState>>,
-    #[allow(dead_code)] // kept alive; may be useful for direct memory inspection later
+    #[allow(dead_code)] // kept alive for debugging
     instance: Instance,
     #[allow(dead_code)]
     memory: Memory,
@@ -201,16 +201,7 @@ impl Mapper for CartridgePlugin {
     }
 }
 
-/// Registers the `env` module imports the cartridge plugin can call into:
-/// driving the Vin line, and logging. Notably absent: anything related to
-/// the 4 native APU channels, PPU, timers, etc. — those aren't the cart's
-/// concern and the plugin has no way to touch them.
-///
-/// These closures deliberately return `()`, not `anyhow::Result<()>` —
-/// wasmtime's `IntoFunc` bound for fallible host functions expects its
-/// own vendored error type, which isn't guaranteed to be the same
-/// `anyhow::Error` this crate depends on. Errors are handled (logged or
-/// turned into a panic) inside the closure instead.
+/// Registers the `env` module imports the cartridge plugin can call into
 fn register_host_imports(linker: &mut Linker<HostState>) -> anyhow::Result<()> {
     wrap_wasm_err(
         linker.func_wrap(
@@ -240,9 +231,6 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> anyhow::Result<()> {
 
                 let samples = buf.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]));
 
-                // Straight push, no mixing here: Vin is a single analog line
-                // from a single cart, there is nothing to sum on this side.
-                // The APU mixer is what sums Vin against its own channels.
                 caller.data_mut().vin.0.push_iter(samples);
             },
         ),
