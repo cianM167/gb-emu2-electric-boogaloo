@@ -3,6 +3,7 @@ use std::{fs::{self, File, OpenOptions}, io::{BufWriter, Write}, result, thread:
 use crate::{Args, gb::{bus::{Bus, Joypad}, bus_state::BusState, cartridge::Cartridge, cpu::Cpu, ppu::Ppu}};
 use gilrs::{Button, Event, EventType, Gilrs};
 use minifb::{Key::{self, Enter}, Window, WindowOptions};
+use ringbuf::{HeapProd, traits::Producer};
 use serde::{Deserialize, Serialize, de};
 
 pub mod ram;
@@ -149,10 +150,15 @@ pub struct GameBoy {
     window: Window,
     gilrs: Gilrs,
     pad_state: PadState,
+
+    audio_producer: HeapProd<f32>,
+    sample_rate: u32,
+    cycles_per_sample: f64,
+    sample_cycle_accum: f64,
 }
 
 impl GameBoy {
-    pub fn new(cart: Cartridge) -> Self {
+    pub fn new(cart: Cartridge, audio_producer: HeapProd<f32>, sample_rate: u32) -> Self {
         // let mut bus = Bus::new(cart);
         // let mut ppu = Ppu::new();
 
@@ -165,7 +171,7 @@ impl GameBoy {
         //     ppu.step(chunk, &mut bus);
         //     remaining -= chunk as u32;
         // }
-
+        const GB_CLOCK_HZ: f64 = 4_194_304.0;
         Self {
             cpu: Cpu::new(false),
             bus: Bus::new(cart),
@@ -173,6 +179,10 @@ impl GameBoy {
             window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
+            audio_producer,
+            sample_rate,
+            cycles_per_sample: GB_CLOCK_HZ / sample_rate as f64,
+            sample_cycle_accum: 0.0,
         }
     }
 
@@ -286,6 +296,9 @@ impl GameBoy {
 
             self.bus.step_timer(cycles);
             self.ppu.step(cycles, &mut self.bus);
+            self.bus.apu.step(cycles as u32);
+
+            self.generate_audio_sample(cycles);
 
             if self.ppu.ready {
                 let frame_time = if let Some(turbo) = turbo {
@@ -458,5 +471,20 @@ impl GameBoy {
         // LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DOT:{dots:03}
 
         file.unwrap().write_all(line.as_bytes()).unwrap();
+    }
+
+    fn generate_audio_sample(&mut self, cycles: u8) {
+        self.sample_cycle_accum += cycles as f64;
+
+        while self.sample_cycle_accum >= self.cycles_per_sample {
+            self.sample_cycle_accum -= self.cycles_per_sample;
+
+            let sample = self.bus.apu.mix_output();
+            let err = self.audio_producer.try_push(sample);// ignore failure lol
+
+            // if sample == 0f32 {
+            //     println!("audio error: {:?}, sample: {}, apu ch2: {:?}", err, sample, self.bus.apu.ch2);
+            // }
+        }
     }
 }

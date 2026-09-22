@@ -1,7 +1,7 @@
 use std::{env, error::Error};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use minifb::KeyRepeat::No;
-use ringbuf::{HeapProd, HeapRb};
+use ringbuf::{HeapCons, HeapProd, HeapRb, traits::{Consumer, Split}};
 use rfd::FileDialog;
 
 use crate::gb::{GameBoy, cartridge::load_rom, instructions::{opcodes, opcodes_cb, unimplemented}};
@@ -89,9 +89,40 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("0x08 timing: {}", opcodes()[0x08].unwrap().cycles);
 
-    let mut gb = GameBoy::new(cart);
+    // audio init
+    let rb = HeapRb::<f32>::new(4096);
+    let (producer, consumer) = rb.split();
+
+    let (stream, sample_rate) = setup_audio(consumer);
+    stream.play().unwrap();
+
+    let mut gb = GameBoy::new(cart, producer, sample_rate);
 
     gb.run(&args);
 
     Ok(())
+}
+
+fn setup_audio(mut consumer: HeapCons<f32>) -> (cpal::Stream, u32) {
+    let host = cpal::default_host();
+    let device = host.default_output_device().expect("no output device");
+    let config = device.default_output_config().unwrap();
+    let sample_rate = config.sample_rate();
+    let channels = config.channels() as usize;
+
+    let stream = device.build_output_stream(
+        config.into(),
+        move |data: &mut [f32], _| {
+            for frame in data.chunks_mut(channels) {
+                let sample = consumer.try_pop().unwrap_or(0.0);
+                for out in frame.iter_mut() {
+                    *out = sample; // duplicate mono sample to all channels for now
+                }
+            }
+        },
+        |err| eprintln!("audio stream error: {err}"),
+        None,
+    ).unwrap();
+
+    (stream, sample_rate)
 }
