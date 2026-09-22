@@ -7,7 +7,7 @@ const DUTY_TABLE: [[u8; 8]; 4] = [
     [0, 1, 1, 1, 1, 1, 1, 1],
 ];
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Apu {
     pub div_apu: u16,
     pub frame_seq_step: u8,
@@ -20,7 +20,7 @@ pub struct Apu {
     pub nr52: u8,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PulseChannel {
     pub sweep: u8,
     pub duty_len: u8,
@@ -28,7 +28,7 @@ pub struct PulseChannel {
     pub freq_lo: u8,
     pub freq_hi_ctrl: u8,
 
-    enabled: bool,
+    pub enabled: bool,
     pub dac_enabled: bool,
     freq_timer: u16,
     duty_pos: u8,
@@ -41,6 +41,16 @@ pub struct PulseChannel {
 }
 
 impl PulseChannel {
+    // getters/setters
+
+    pub fn set_sweep(&mut self, value: u8) {
+        if self.enabled {
+            self.sweep = value
+        }
+    }
+
+    // other stuff
+
     fn frequency(&self) -> u16 {
         ((self.freq_hi_ctrl as u16 & 0b1111) << 8) | self.freq_lo as u16
     }
@@ -151,5 +161,29 @@ impl Apu {
                 _ => ()
             }
         }
+    }
+
+    pub fn mix_output(&self) -> f32 {
+        self.ch2.sample() * 0.25
+    }
+
+    pub fn power_off(&mut self) {// 10000000000% wrong and lazy :)
+        let ch1_len = self.ch1.length_timer;
+        let ch2_len = self.ch2.length_timer;
+        let ch3_len = self.ch3.length_timer;
+        let ch4_len = self.ch4.length_timer;
+
+        self.ch1 = PulseChannel::default();
+        self.ch2 = PulseChannel::default();
+        self.ch3 = PulseChannel::default();
+        self.ch4 = PulseChannel::default();
+
+        self.ch1.length_timer = ch1_len;
+        self.ch2.length_timer = ch2_len;
+        self.ch3.length_timer = ch3_len;
+        self.ch4.length_timer = ch4_len;
+
+        self.nr50 = 0;
+        self.nr51 = 0;
     }
 }
