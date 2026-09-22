@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 
-use crate::gb::{apu::Apu, bus_state::BusState, cartridge::Cartridge};
+use crate::gb::{apu::{Apu, Channel::{Ch1, Ch2}}, bus_state::BusState, cartridge::Cartridge};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Joypad {
@@ -32,8 +32,6 @@ pub struct Bus {
     wram: [u8; 0x2000],
     oam: [u8; 0xA0],
     hram: [u8; 0x7F],
-
-    cgb_wram_bank: u8,
 
     wave_ram: [u8; 0x10],
 
@@ -82,7 +80,6 @@ impl Bus {
             oam: [0; 0xA0],
             hram: [0xFF; 0x7F],
 
-            cgb_wram_bank: 0,
             wave_ram: [0; 0x10],
 
             joyp: 0x3F,
@@ -281,41 +278,31 @@ impl Bus {
 
             0xFF0F => self.iflag,
 
-            0xFF10 => self.apu.ch1.sweep | 0x80,
-            0xFF11 => self.apu.ch1.duty_len | 0x3F,
+            0xFF10 => self.apu.ch1.sweep,
+            0xFF11 => self.apu.ch1.duty_len,
             0xFF12 => self.apu.ch1.envelope,
-            0xFF13 => 0xFF,
-            0xFF14 => (self.apu.ch1.freq_hi_ctrl & 0x40) | 0xBF,
-            0xFF15 => 0xFF,
+            0xFF13 => unreachable!(),
+            0xFF14 => self.apu.ch1.freq_hi_ctrl & 0x40,
 
-            0xFF16 => self.apu.ch2.duty_len | 0x3F,
+            0xFF16 => self.apu.ch2.duty_len,
             0xFF17 => self.apu.ch2.envelope,
-            0xFF18 => 0xFF,
-            0xFF19 => (self.apu.ch2.freq_hi_ctrl & 0x40) | 0xBF,
+            0xFF18 => unreachable!(),
+            0xFF19 => self.apu.ch2.freq_hi_ctrl & 0x40,
 
-            0xFF1A => (self.apu.ch3.dac_enabled as u8) << 7 | 0x7F,
-            0xFF1B => 0xFF,
-            0xFF1C => self.apu.ch3.envelope | 0x9F,
-            0xFF1D => 0xFF,
-            0xFF1E => (self.apu.ch3.freq_hi_ctrl & 0x40) | 0xBF,
-            0xFF1F => 0xFF,
+            0xFF1A => (self.apu.ch3.dac_enabled as u8) << 7,
+            0xFF1B => unreachable!(),
+            0xFF1C => self.apu.ch3.envelope,
+            0xFF1D => unreachable!(),
+            0xFF1E => self.apu.ch3.freq_hi_ctrl & 0x40,
 
-            0xFF20 => 0xFF,
+            0xFF20 => self.apu.ch4.duty_len,
             0xFF21 => self.apu.ch4.envelope,
             0xFF22 => self.apu.ch4.freq_lo,
-            0xFF23 => (self.apu.ch4.freq_hi_ctrl & 0x40) | 0xBF,
+            0xFF23 => self.apu.ch4.freq_hi_ctrl & 0x40,
 
             0xFF24 => self.apu.nr50,
             0xFF25 => self.apu.nr51,
-            0xFF26 => {
-                (self.apu.nr52 & 0x80)
-                    | 0x70 // bits 4-6 unused, read as 1
-                    | (self.apu.ch1.enabled as u8)
-                    | (self.apu.ch2.enabled as u8) << 1
-                    | (self.apu.ch3.enabled as u8) << 2
-                    | (self.apu.ch4.enabled as u8) << 3
-            }
-            0xFF27..=0xFF2F => 0xFF,// ignore????
+            0xFF26 => self.apu.nr52,
 
             0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30],
 
@@ -338,8 +325,6 @@ impl Bus {
 
             0xFF4A => self.wy,
             0xFF4B => self.wx,
-
-            0xFF70 => self.cgb_wram_bank,
 
             0xFF80..=0xFFFE => {// hram
                 self.hram[(addr - 0xFF80) as usize]
@@ -404,60 +389,31 @@ impl Bus {
 
             0xFF0F => self.iflag = value,
 
-            0xFF10 => self.apu.ch1.sweep = value,
-            0xFF11 => self.apu.ch1.duty_len = value,
+            0xFF10 => self.apu.set_channel_sweep(value),
+            0xFF11 => self.apu.ch1.duty_len = value & 0xC0,
             0xFF12 => self.apu.ch1.envelope = value,
             0xFF13 => self.apu.ch1.freq_lo = value,
-            0xFF14 => {
-                self.apu.ch1.freq_hi_ctrl = value;
-                if value & 0x80 != 0 {
-                    self.apu.ch1.trigger();
-                }
-            }
-            0xFF15 => (),// do nothing broken todo
+            0xFF14 => self.apu.ch1.freq_hi_ctrl = value,
 
-            0xFF16 => self.apu.ch2.duty_len = value,
-            0xFF17 => self.apu.ch2.envelope = value,
+            0xFF16 => self.apu.ch2.duty_len = value & 0xC0,
+            0xFF17 => self.apu.ch2.envelope = value & 0xC0,
             0xFF18 => self.apu.ch2.freq_lo = value,
-            0xFF19 => {
-                self.apu.ch2.freq_hi_ctrl = value;
-                if value & 0x80 != 0 {
-                    self.apu.ch2.trigger();
-                }
-            }
+            0xFF19 => self.apu.ch2.freq_hi_ctrl = value,
 
-            0xFF1A => self.apu.ch3.dac_enabled = value & 0x80 != 0,
+            0xFF1A => self.apu.ch3.dac_enabled = value & 80 == 1,
             0xFF1B => self.apu.ch3.duty_len = value,
             0xFF1C => self.apu.ch3.envelope = value,
             0xFF1D => self.apu.ch3.freq_lo = value,
-            0xFF1E => {
-                self.apu.ch3.freq_hi_ctrl = value;
-                if value & 0x80 != 0 {
-                    self.apu.ch3.trigger();
-                }
-            }
-            0xFF1F => (),// do nothing broken todo
+            0xFF1E => self.apu.ch3.freq_hi_ctrl = value,
 
             0xFF20 => self.apu.ch4.duty_len = value,
             0xFF21 => self.apu.ch4.envelope = value,
             0xFF22 => self.apu.ch4.freq_lo = value,
-            0xFF23 => {
-                self.apu.ch4.freq_hi_ctrl = value;
-                if value & 0x80 != 0 {
-                    self.apu.ch4.trigger();
-                }
-            }
+            0xFF23 => self.apu.ch4.freq_hi_ctrl = value,
 
             0xFF24 => self.apu.nr50 = value,
             0xFF25 => self.apu.nr51 = value,
-            0xFF26 => {
-                if value & 0x80 == 0 {
-                    self.apu.power_off();
-                }
-                self.apu.nr52 = value & 0x80
-            },
-            0xFF27..=0xFF2F => (),// ignore????
-            
+            0xFF26 => self.apu.nr52 = value & 0x80,
 
             0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30] = value,
 
@@ -479,8 +435,6 @@ impl Bus {
             0xFF49 => self.opb1 = value,
 
             0xFF56 => self.rp = value,// ir port
-
-            0xFF70 => self.cgb_wram_bank = value,
 
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,

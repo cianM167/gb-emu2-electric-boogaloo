@@ -1,5 +1,7 @@
 use serde::de::value;
 
+use crate::gb::apu::Channel::{Ch1, Ch2, Ch3, Ch4};
+
 const DUTY_TABLE: [[u8; 8]; 4] = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [1, 0, 0, 0, 0, 0, 0, 1],
@@ -18,6 +20,13 @@ pub struct Apu {
     pub nr50: u8,
     pub nr51: u8,
     pub nr52: u8,
+}
+
+pub enum Channel {
+    Ch1,
+    Ch2,
+    Ch3,
+    Ch4,
 }
 
 #[derive(Default, Debug)]
@@ -46,6 +55,13 @@ impl PulseChannel {
     pub fn set_sweep(&mut self, value: u8) {
         if self.enabled {
             self.sweep = value
+        }
+        // ignore write when off
+    }
+
+    pub fn set_duty(&mut self, value: u8) {
+        if self.enabled {
+            self.duty_len = value
         }
     }
 
@@ -185,5 +201,22 @@ impl Apu {
 
         self.nr50 = 0;
         self.nr51 = 0;
+    }
+
+    pub fn set_channel_sweep(&mut self, value: u8) {
+        if self.nr52 & 0x80 == 1 {
+            self.ch1.set_sweep(value);
+        }
+    }
+
+    pub fn set_channel_duty(&mut self, channel: Channel, value: u8) {
+        if self.nr52 & 0x80 == 1 {
+            match channel {
+                Ch1 => self.ch1.set_duty(value),
+                Ch2 => self.ch2.set_duty(value),
+                Ch3 => self.ch3.set_duty(value),
+                Ch4 => self.ch4.set_duty(value),
+            }
+        }
     }
 }
