@@ -16,7 +16,7 @@ pub struct Apu {
     pub ch1: PulseChannel,
     pub ch2: PulseChannel,
     pub ch3: PulseChannel,
-    pub ch4: PulseChannel,
+    pub ch4: NoiseChannel,
     pub nr50: u8,
     pub nr51: u8,
     pub nr52: u8,
@@ -53,16 +53,20 @@ impl PulseChannel {
     // getters/setters
 
     pub fn set_sweep(&mut self, value: u8) {
-        if self.enabled {
-            self.sweep = value
-        }
+        // if self.enabled || self.dac_enabled {
+        self.sweep = value
+        // }
         // ignore write when off
     }
 
     pub fn set_duty(&mut self, value: u8) {
-        if self.enabled {
-            self.duty_len = value
-        }
+        // if self.enabled {
+        self.duty_len = value
+        // }
+    }
+
+    pub fn set_freq_lo(&mut self, value: u8) {
+        self.freq_lo = value
     }
 
     // other stuff
@@ -109,7 +113,7 @@ impl PulseChannel {
             self.length_timer = 64;
         }
 
-        self.freq_timer= (2048 - self.frequency()) * 4;
+        self.freq_timer = (2048 - self.frequency()) * 4;
         self.envelope_timer = self.envelope_period();
         self.current_volume = self.initial_volume();
     }
@@ -163,9 +167,119 @@ impl PulseChannel {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct NoiseChannel {
+    pub duty_len: u8,// nr41
+    pub envelope: u8,// nr42
+    pub freq_rand: u8,// nr43
+    pub freq_hi_ctrl: u8,
+
+    pub enabled: bool,
+    pub dac_enabled: bool,
+    envelope_timer: u8,
+    length_timer: u8,
+    current_volume: u8,
+
+    lfsr: u16,
+    freq_timer: u32,
+}
+
+impl NoiseChannel {
+    pub fn set_length(&mut self, value: u8) {// nr41
+        self.length_timer = 64 - (value & 0x3F);
+    }
+
+    pub fn write_envelope(&mut self, val: u8) {// nr42
+        self.envelope = val;
+        self.dac_enabled = (val & 0b1111_1000) != 0;
+        if !self.dac_enabled {
+            self.enabled = false;
+        }
+    }
+
+    pub fn set_freq_rand(&mut self, value: u8) {// set sub regs
+        self.freq_rand = value
+    }
+
+    pub fn trigger(&mut self) {//  nr44
+        self.enabled = self.dac_enabled;
+        if self.length_timer == 0 {
+            self.length_timer = 64;
+        }
+
+        self.freq_timer = self.period();
+        self.lfsr = 0x7FFF;
+        self.envelope_timer = self.envelope_period();
+        self.current_volume = self.initial_volume();
+    }
+
+    fn envelope_period(&self) -> u8 {
+        self.envelope & 0b0111
+    }
+
+    fn initial_volume(&self) -> u8 {
+        self.envelope >> 4
+    }
+
+    fn divisor(&self) -> u32 {
+        let r = (self.freq_rand & 0b111) as usize;
+        const DIVISOR_TABLE: [u32; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
+        DIVISOR_TABLE[r]
+    }
+
+    fn shift_amount(&self) -> u8 {
+        self.freq_rand >> 4
+    }
+
+    fn width_mode_7bit(&self) -> bool {
+        (self.freq_rand >> 3) & 1 == 1
+    }
+
+    fn period(&self) -> u32 {
+        self.divisor() << self.shift_amount()
+    }
+
+    pub fn step_timer(&mut self, cycles: u32) {
+        if self.freq_timer <= cycles {
+            let remainder = cycles - self.freq_timer;
+            self.freq_timer = self.period();
+            self.shift_lfsr();
+            if remainder > 0 {
+                self.step_timer(remainder);
+            }
+        } else {
+            self.freq_timer -= cycles;
+        }
+    }
+
+    fn shift_lfsr(&mut self) {
+        let bit0 = self.lfsr & 1;
+        let bit1 = (self.lfsr >> 1) & 1;
+        let xor_result = bit0 ^ bit1;
+
+        self.lfsr >>= 1;
+        self.lfsr |= xor_result << 14;
+
+        if self.width_mode_7bit() {
+            self.lfsr &= !(1 << 6);
+            self.lfsr |= xor_result << 6;
+        }
+    }
+
+    pub fn sample(&self) -> f32 {
+        if !self.enabled || !self.dac_enabled {
+            return 0.0;
+        }
+        let bit = (!self.lfsr) & 1;
+        (bit as f32) * (self.current_volume as f32 / 15.0)
+    }
+}
+
 impl Apu {
     pub fn step(&mut self, cycles: u32) {
         self.ch2.step_timer(cycles as u16);
+        self.ch4.step_timer(cycles as u32);
+        self.ch1.step_timer(cycles as u16);// temporary
 
         self.div_apu = self.div_apu.wrapping_add(cycles as u16);
         while self.div_apu >= 8192 {
@@ -192,7 +306,7 @@ impl Apu {
         self.ch1 = PulseChannel::default();
         self.ch2 = PulseChannel::default();
         self.ch3 = PulseChannel::default();
-        self.ch4 = PulseChannel::default();
+        self.ch4 = NoiseChannel::default();
 
         self.ch1.length_timer = ch1_len;
         self.ch2.length_timer = ch2_len;
@@ -204,18 +318,29 @@ impl Apu {
     }
 
     pub fn set_channel_sweep(&mut self, value: u8) {
-        if self.nr52 & 0x80 == 1 {
+        if self.nr52 & 0x80 != 0 {
             self.ch1.set_sweep(value);
         }
     }
 
     pub fn set_channel_duty(&mut self, channel: Channel, value: u8) {
-        if self.nr52 & 0x80 == 1 {
+        if self.nr52 & 0x80 != 0 {
             match channel {
                 Ch1 => self.ch1.set_duty(value),
                 Ch2 => self.ch2.set_duty(value),
                 Ch3 => self.ch3.set_duty(value),
-                Ch4 => self.ch4.set_duty(value),
+                Ch4 => self.ch4.set_length(value),
+            }
+        }
+    }
+
+    pub fn set_channel_freq_lo(&mut self, channel: Channel, value: u8) {
+        if self.nr52 & 0x80 != 0 {
+            match channel {
+                Ch1 => self.ch1.set_freq_lo(value),
+                Ch2 => self.ch2.set_freq_lo(value),
+                Ch3 => self.ch3.set_freq_lo(value),
+                Ch4 => self.ch4.set_freq_rand(value),
             }
         }
     }
