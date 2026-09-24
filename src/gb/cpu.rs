@@ -12,6 +12,7 @@ pub struct Cpu {
     pub enable_ime_next: bool,
     pub halted: bool,
     pub halt_bug: bool,
+    pub double_speed: bool,
 
     pub opcode: u8,
     pub cycles: u64,
@@ -29,6 +30,7 @@ impl Cpu {
             enable_ime_next: false,
             halted: false,
             halt_bug: false,
+            double_speed: false,
             opcode: 0,
             cycles: 0,
             debug

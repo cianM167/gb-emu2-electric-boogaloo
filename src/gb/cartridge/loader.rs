@@ -39,6 +39,8 @@ pub fn load_rom(path: &str, plugin_path: Option<&str>) -> Result<Cartridge, Stri
             0x13 => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// temporary not really implemented
 
             0x1B => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// indescribably broken do not try at home
+
+            0x19 => Box::new(Mbc3::new(rom, header.ram_size_bytes())),// trying to boot gex with wrong mapper
             _ => return Err(format!(
                 "Unsupported cartridge type: {:#04X}",
                 header.cartridge_type

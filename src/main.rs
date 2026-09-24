@@ -15,7 +15,8 @@ struct Args {
     input_script: Option<String>,
     trace_out: Option<String>,
     recording: Option<String>,
-    custom_cart: Option<String>
+    custom_cart: Option<String>,
+    cgb_mode: bool,
 }
 
 fn parse_args(raw: &[String]) -> Args {
@@ -26,6 +27,7 @@ fn parse_args(raw: &[String]) -> Args {
         trace_out: None,
         recording: None,
         custom_cart: None,
+        cgb_mode: false
     };
 
     let mut i = 2;
@@ -37,6 +39,7 @@ fn parse_args(raw: &[String]) -> Args {
             "--input-script" => { i += 1; a.input_script = Some(raw[i].clone()); }
             "--trace-out" => { i += 1; a.trace_out = Some(raw[i].clone()); }
             "--custom-cart" => { i += 1; a.custom_cart = Some(raw[i].clone()); }
+            "--cgb" => a.cgb_mode = true,
             _ => {}
         }
         i += 1;

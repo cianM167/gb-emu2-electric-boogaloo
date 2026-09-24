@@ -147,6 +147,7 @@ pub struct GameBoy {
     cpu: Cpu,
     bus: Bus,
     ppu: Ppu,
+
     window: Window,
     gilrs: Gilrs,
     pad_state: PadState,
@@ -233,6 +234,9 @@ impl GameBoy {
         let script = args.input_script.as_ref().map(|p| InputScript::load(p));
         let mut tracer = args.trace_out.as_ref().map(|p| Tracer::new(p));
         let mut recorder = args.recording.as_ref().map(|p| Recorder::new(p));
+        if args.cgb_mode {
+            self.cpu.registers.set_a(0x11);
+        }
         let mut frame_count: u64 = 0;
 
         let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
@@ -292,11 +296,18 @@ impl GameBoy {
             }
 
             let cycles = self.cpu.step(&mut self.bus);
+
+            let non_double_cycles = if self.cpu.double_speed {
+                cycles / 2
+            } else {
+                cycles
+            };
+
             cycles_this_second += cycles as u32;
 
             self.bus.step_timer(cycles);
-            self.ppu.step(cycles, &mut self.bus);
-            self.bus.apu.step(cycles as u32);
+            self.ppu.step(non_double_cycles, &mut self.bus);
+            self.bus.apu.step(non_double_cycles as u32);
 
             self.generate_audio_sample(cycles);
 
