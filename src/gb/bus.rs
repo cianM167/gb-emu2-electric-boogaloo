@@ -52,6 +52,9 @@ pub struct Bus {
     serial_in: u8,
     rp: u8,
 
+    // cgb regs
+    spd: u8,
+
     // inaccurate bullshit
     dma_source: u8,
     pub joypad: Joypad,
@@ -100,6 +103,9 @@ impl Bus {
             serial_data: 0,
             serial_in: 0,
             rp: 0,
+
+            // cgb regs
+            spd: 0,
 
             dma_source: 0,
             joypad: Joypad::default(),
@@ -340,6 +346,8 @@ impl Bus {
             0xFF4A => self.wy,
             0xFF4B => self.wx,
 
+            0xFF4D => self.spd,
+
             0xFF80..=0xFFFE => {// hram
                 self.hram[(addr - 0xFF80) as usize]
             }
@@ -481,6 +489,8 @@ impl Bus {
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,
 
+            0xFF4D => self.spd = value,
+            0xFF4F => (),// cgb vram bank ignore for now
 
             0xFF80..=0xFFFE => {// hram
                 self.hram[(addr - 0xFF80) as usize] = value;

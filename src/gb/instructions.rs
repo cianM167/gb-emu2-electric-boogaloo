@@ -1189,6 +1189,21 @@ fn halt(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// bugged?
     instr.cycles
 }
 
+fn stop(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// not touching this with a 10 foot pole
+    let switch = bus.read(0xFF4D) & 0x01 != 0;
+
+    if switch {
+        cpu.double_speed = !cpu.double_speed;
+        let new = (cpu.double_speed as u8) << 7;
+        bus.write(0xFF4D, new);
+    } else {
+        panic!("IDK HOW THIS INSTRUCTION WORKS HELP")
+    }
+
+    cpu.registers.inc_pc_by(instr.size as u16);
+    instr.cycles
+}
+
 fn di(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.ime = false;
 
@@ -2041,6 +2056,7 @@ fn dispatch_for(opcode: u8, is_cb: bool, mnemonic: &String, operands: Operands) 
         ("EI", Operands::None) => ei,
         ("DAA", Operands::None) => daa,
         ("CPL", Operands::None) => cpl,
+        ("STOP", Operands::Imm8) => stop,
 
         ("SCF", Operands::None) => scf,
         ("CCF", Operands::None) => ccf,
