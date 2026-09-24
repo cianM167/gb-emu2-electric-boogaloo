@@ -1178,8 +1178,9 @@ fn ccf(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 fn halt(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// bugged?
     let pending = bus.get_ie() & bus.get_iflag() != 0;
 
-    if cpu.ime && pending {
+    if pending && !cpu.ime {
         cpu.halt_bug = true;
+        cpu.registers.inc_pc_by(instr.size as u16);
     } else {
         cpu.halted = true;
         cpu.registers.inc_pc_by(instr.size as u16);

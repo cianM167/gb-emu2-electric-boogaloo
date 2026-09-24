@@ -45,30 +45,32 @@ impl Cpu {
         //     return cycles;// to align with same boy logs
         // }
 
-        if self.halted {
+         if self.halted {
             let pending = bus.get_ie() & bus.get_iflag();
-
             if pending != 0 {
                 cycles += 4;
-
-                if !self.ime {
-                    self.halt_bug = true;
-                }
-
                 self.halted = false;
                 return cycles;
             } else {
-                cycles +=4;
+                cycles += 4;
                 return cycles;
             }
         }
 
-        let opcode = bus.read(self.registers.get_pc());
+        let apply_halt_bug = self.halt_bug;
+        self.halt_bug = false;
+
+        let pc_before = self.registers.get_pc();
+        let opcode = bus.read(pc_before);
         // println!("opcode read: {:#02X} pc: {:#02X}", opcode, self.registers.get_pc());
 
         let instr = opcodes()[opcode as usize].expect(&*format!("Unknown opcode {:#02X}", opcode));
 
         cycles += (instr.execute)(&instr, self, bus);// execute instruction
+
+        if apply_halt_bug {
+            self.registers.set_pc(pc_before);
+        }
 
         if self.enable_ime_next {
             self.ime = true;

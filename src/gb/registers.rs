@@ -53,7 +53,7 @@ pub struct Registers {
 impl Registers {
     pub fn new() -> Self {
         Registers { 
-            a: 0x01, 
+            a: 0x01, // set to 0x11 for cgb
             b: 0x00,
             c: 0x13,
             d: 0x00, 

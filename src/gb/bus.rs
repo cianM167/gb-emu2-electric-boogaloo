@@ -27,6 +27,8 @@ pub struct Bus {
     tma: u8,
     tac: u8,
     timer_acc: u16,
+    tima_reload_pending: bool,
+    tima_reload_delay: u8,
 
     vram: [u8; 0x2000],
     wram: [u8; 0x2000],
@@ -74,6 +76,8 @@ impl Bus {
             tma: 0,
             tac: 0,
             timer_acc: 0,
+            tima_reload_pending: false,
+            tima_reload_delay: 0,
 
             vram: [0; 0x2000],
             wram: [0; 0x2000],
@@ -523,6 +527,16 @@ impl Bus {
     pub fn step_timer(&mut self, cycles: u8) {
         self.div = self.div.wrapping_add(cycles as u16);
 
+        if self.tima_reload_pending {
+        if self.tima_reload_delay <= cycles {
+            self.tima = self.tma;
+            self.request_interrupt(2);
+            self.tima_reload_pending = false;
+        } else {
+            self.tima_reload_delay -= cycles;
+        }
+    }
+
         if self.tac & 0x04 == 0 {
             return;
         }
@@ -541,7 +555,8 @@ impl Bus {
             let (new_tima, overflowed) = self.tima.overflowing_add(1);
             if overflowed {
                 self.tima = self.tma;
-                self.iflag |= 0x04;
+                self.tima_reload_pending = true;
+                self.tima_reload_delay = 4;
             } else {
                 self.tima = new_tima;
             }
