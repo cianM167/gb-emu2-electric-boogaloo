@@ -203,6 +203,8 @@ fn ld_rr_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(dst, result);
 
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -220,6 +222,8 @@ fn ld_rr_rr_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, (sp & 0xFF) + (offset as u16 & 0xFF) > 0xFF);
 
     cpu.registers.set16(dst, result);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
@@ -367,6 +371,8 @@ fn dec_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let new = old.wrapping_sub(1);
 
     cpu.registers.set16(src, new);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
@@ -588,7 +594,7 @@ fn sub_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     };
 
     let reg1 = cpu.registers.get8(dst);
-    let reg2 = bus.read(addr);
+    let reg2 = bus.read_cycle(addr);
 
     let diff16 = (reg1 as u16).wrapping_sub(reg2 as u16);
     let result = (diff16 & 0xFF) as u8;
@@ -646,7 +652,7 @@ fn cp_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     };
 
     let reg1 = cpu.registers.get8(dst);
-    let reg2 = bus.read(addr);
+    let reg2 = bus.read_cycle(addr);
 
     let diff16 = (reg1 as u16).wrapping_sub(reg2 as u16);
     let result = (diff16 & 0xFF) as u8;
@@ -694,9 +700,8 @@ fn or_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
 fn or_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc().wrapping_add(1);
 
-    let value = bus.read(pc);
+    let value = cpu.fetch8(bus);
     let result = cpu.registers.get8(dst) | value;
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -791,7 +796,7 @@ fn and_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let result = cpu.registers.get8(dst) & bus.read(addr);
+    let result = cpu.registers.get8(dst) & bus.read_cycle(addr);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -832,11 +837,10 @@ fn sbc_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
 fn sbc_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
     let carry_in = cpu.registers.get_flag(FlagBits::C) as u16;
 
     let reg1 = cpu.registers.get8(dst);
-    let reg2 = bus.read(pc);
+    let reg2 = cpu.fetch8(bus);
 
     let diff16 = (reg1 as u16)
         .wrapping_sub(reg2 as u16)
@@ -868,7 +872,7 @@ fn sbc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     };
 
     let reg1 = cpu.registers.get8(dst);
-    let reg2 = bus.read(addr);
+    let reg2 = bus.read_cycle(addr);
 
     let diff16 = (reg1 as u16)
         .wrapping_sub(reg2 as u16)
@@ -1010,19 +1014,18 @@ fn ret_cc(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         
         20
     } else {
-        cpu.registers.inc_pc();
-
         8
     }
 }
 
 fn reti(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
-    let addr = bus.read_u16(cpu.registers.get_sp());
-    cpu.registers.inc_sp(2);
+    let addr = cpu.pop16(bus);
     
     cpu.registers.set_pc(addr);
 
     cpu.ime = true;
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
@@ -1031,12 +1034,12 @@ fn reti(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
 fn rst(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reset(vector) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc().wrapping_add(1);
 
-    cpu.registers.dec_sp(2);
-    bus.write_u16(cpu.registers.get_sp(), pc);
+    cpu.push16(bus, cpu.registers.get_pc());
 
     cpu.registers.set_pc(vector as u16);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
@@ -1046,8 +1049,9 @@ fn rst(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 fn push_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16(src) = instr.operands else { unreachable!() };
 
-    cpu.registers.dec_sp(2);
-    bus.write_u16_cycle(cpu.registers.get_sp(), cpu.registers.get16(src));
+    let value = cpu.registers.get16(src);
+
+    cpu.push16(bus, value);
 
     bus.tick(bus.double_speed);
 
@@ -1057,8 +1061,7 @@ fn push_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 fn pop_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16(dst) = instr.operands else { unreachable!() };
 
-    let val = bus.read_u16_cycle(cpu.registers.get_sp());
-    cpu.registers.inc_sp(2);
+    let val = cpu.pop16(bus);
 
     cpu.registers.set16(dst, val);
 
@@ -1127,9 +1130,10 @@ fn cb(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
    #[cfg(debug_assertions)]
     {
         let t = (bus.tick_count - start) * 4;
+        let mne = next.name;
         debug_assert_eq!(
             t, next.cycles as u64,
-            "cycle mismatch: CB opcode {opcode:#04X} expected {} got {t}",
+            "cycle mismatch: CB opcode {opcode:#04X} {mne} expected {} got {t}",
             next.cycles
         );
     }
@@ -1218,16 +1222,19 @@ fn srl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let carry = old & 0x01;
 
     let result = old >> 1;
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry != 0);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1246,6 +1253,9 @@ fn rr_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1257,18 +1267,21 @@ fn rr_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let old_carry = cpu.registers.get_flag(FlagBits::C);
 
     let carry = (old & 0x01) != 0;
 
     let result = (old >> 1) | ((old_carry as u8) << 7);
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1285,6 +1298,9 @@ fn rrc_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1299,6 +1315,7 @@ fn rrca(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
     instr.cycles
 }
 
@@ -1310,16 +1327,19 @@ fn rrc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let carry = (old & 0x01) != 0;
 
     let result = (old >> 1) | ((carry as u8) << 7);
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1338,6 +1358,9 @@ fn rl_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1349,18 +1372,21 @@ fn rl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let old_carry = cpu.registers.get_flag(FlagBits::C);
 
     let carry = (old & 0x80) != 0;
 
     let result = (old << 1) + old_carry as u8;
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1410,6 +1436,9 @@ fn rlc(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, highest != 0);
+
+    bus.tick(bus.double_speed);
+    
     instr.cycles
 }
 
@@ -1436,17 +1465,20 @@ fn rlc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let reg = bus.read(addr);
+    let reg = bus.read_cycle(addr);
 
     let highest = (reg & 0b1000_0000) >> 7;
     let result = (reg << 1) + highest;
 
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, highest != 0);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1466,6 +1498,9 @@ fn sla_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1477,17 +1512,20 @@ fn sla_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let reg = bus.read(addr);
+    let reg = bus.read_cycle(addr);
 
     let carry = reg & 0b1000_0000 != 0;
 
     let result = reg << 1;
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1506,6 +1544,9 @@ fn sra_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1517,18 +1558,21 @@ fn sra_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let reg = bus.read(addr);
+    let reg = bus.read_cycle(addr);
 
     let bit7 = reg >> 7 & 1 == 1;
     let carry = reg & 0x01 != 0;
 
     let result = (reg >> 1) | (bit7 as u8) << 7;
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1552,6 +1596,9 @@ fn swap_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, false);
 
     cpu.registers.set8(src, result);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1563,7 +1610,7 @@ fn swap_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let reg = bus.read(addr);
+    let reg = bus.read_cycle(addr);
     // println!("in: {reg:02X}");
 
     let hi = (reg & 0xF0) >> 4;
@@ -1577,7 +1624,10 @@ fn swap_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1592,6 +1642,9 @@ fn bit_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::Z, zero);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, true);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1603,12 +1656,15 @@ fn bit_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!()
     };
 
-    let val = bus.read(addr);
+    let val = bus.read_cycle(addr);
     let zero = ((1 << bit) & val) == 0;
 
     cpu.registers.set_flag_to(FlagBits::Z, zero);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, true);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1620,6 +1676,9 @@ fn res_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let old = cpu.registers.get8(src);
     let result = old & !(1 << bit);
     cpu.registers.set8(src, result);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1631,9 +1690,12 @@ fn res_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!()
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let result = old & !(1 << bit);
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
+
+    bus.tick(bus.double_speed);
+    
     instr.cycles
 }
 
@@ -1647,10 +1709,13 @@ fn set_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!()
     };
 
-    let value = bus.read(addr);
+    let value = bus.read_cycle(addr);
     let result= value | (1 << bit);
 
-    bus.write(addr, result);
+    bus.write_cycle(addr, result);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1661,6 +1726,9 @@ fn set_reg(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result= value | (1 << bit);
 
     cpu.registers.set8(reg, result);
+
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 

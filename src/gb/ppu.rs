@@ -88,7 +88,7 @@ impl Ppu {
             }
             0xFF42 => self.regs.scy,
             0xFF43 => self.regs.scx,
-            0xFF44 => self.regs.ly,
+            0xFF44 => 0x90,// self.regs.ly,
             0xFF45 => self.regs.lyc,
             0xFF47 => self.regs.bgp,
             0xFF48 => self.regs.obp0,
@@ -129,6 +129,7 @@ impl Ppu {
     }
 
     pub fn write_oam(&mut self, addr: u16, value: u8) {
+        println!("addr going in: {}", addr - 0xFE00);
         self.oam[(addr - 0xFE00) as usize] = value
     }
 

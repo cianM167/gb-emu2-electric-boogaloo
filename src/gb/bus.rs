@@ -387,7 +387,7 @@ impl Bus {
                 let src_base = (value as u16) << 8;
                 for i in 0..0xA0u16 {
                     let data = self.read(src_base + i);
-                    self.ppu.write_oam(addr, value);
+                    self.ppu.write_oam(i + 0xFE00, data);
                 }
             }
 
