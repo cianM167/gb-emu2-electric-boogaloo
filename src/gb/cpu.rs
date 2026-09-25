@@ -76,6 +76,11 @@ impl Cpu {
 
         (instr.execute)(&instr, self, bus);// execute instruction
 
+        // let sp = bus.read_u16(0xDFFD);
+        // if sp == 0xC008 {
+        //     panic!()
+        // }
+
 
         #[cfg(debug_assertions)]
         {
