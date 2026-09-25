@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::value};
 use serde_big_array::BigArray;
 use crate::gb::{bus::Bus, ppu::PpuMode::OamScan};
 
@@ -17,53 +17,157 @@ struct SpriteAttr {
     flags: u8,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Default)]
+pub struct PpuRegs {
+    pub lcdc: u8,  // FF40
+    pub stat: u8,  // FF41 (only bits 3-6 are writable)
+    pub scy: u8,   // FF42
+    pub scx: u8,   // FF43
+    pub ly: u8,    // FF44 (read-only)
+    pub lyc: u8,   // FF45
+    pub bgp: u8,   // FF47
+    pub obp0: u8,  // FF48
+    pub obp1: u8,  // FF49
+    pub wy: u8,    // FF4A
+    pub wx: u8,    // FF4B
+}
+
+impl PpuRegs {
+    pub fn post_boot(cgb: bool) -> Self {
+        Self {
+            lcdc: 0x91,
+            stat: 0x85,
+            scy:  0x00,
+            scx:  0x00,
+            ly:   0x00,
+            lyc:  0x00,
+            bgp:  0xFC,
+            obp0: 0xFF,
+            obp1: 0xFF,
+            wy:   0x00,
+            wx:   0x00,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct PpuEvents {
+    pub vblank: bool,
+    pub stat: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Ppu {
     #[serde(with = "BigArray")]
     pub frame_buffer: [u32; 160 * 144],
     pub ready: bool,
     pub dot_counter: u16,
-    ly: u8,
     mode: PpuMode,
     #[serde(with = "BigArray")]
     bg_color_ids: [u8; 160],
     just_enabled: bool,
     was_on_last_step: bool,
+    
+    pub regs: PpuRegs,
+    #[serde(with = "BigArray")]
+    vram: [u8; 0x2000],
+    #[serde(with = "BigArray")]
+    oam: [u8; 0xA0],
+
+    stat_line: bool,
 }
 
 impl Ppu {
-    pub fn new() -> Self {
+    pub fn read_reg(&self, addr: u16) -> u8 {
+        match addr {
+            0xFF40 => self.regs.lcdc,
+            0xFF41 => {
+                let on = self.regs.lcdc & 0x80 != 0;
+                let (mode, coin) = if on { (self.mode_bits(), (self.regs.ly == self.regs.lyc) as u8) } else { (0, 0) };
+                0x80 | (self.regs.stat & 0x78) | (coin << 2) | mode
+            }
+            0xFF42 => self.regs.scy,
+            0xFF43 => self.regs.scx,
+            0xFF44 => self.regs.ly,
+            0xFF45 => self.regs.lyc,
+            0xFF47 => self.regs.bgp,
+            0xFF48 => self.regs.obp0,
+            0xFF49 => self.regs.obp1,
+            0xFF4A => self.regs.wy,
+            0xFF4B => self.regs.wx,
+            _ => 0xFF,
+        }
+    }
+
+    pub fn write_reg(&mut self, addr: u16, v: u8) {
+        match addr {
+            0xFF40 => self.regs.lcdc = v,
+            0xFF41 => self.regs.stat = (self.regs.stat & !0x78) | (v & 0x78),
+            0xFF42 => self.regs.scy = v,
+            0xFF43 => self.regs.scx = v,
+            0xFF44 => {} // read-only
+            0xFF45 => self.regs.lyc = v,
+            0xFF47 => self.regs.bgp = v,
+            0xFF48 => self.regs.obp0 = v,
+            0xFF49 => self.regs.obp1 = v,
+            0xFF4A => self.regs.wy = v,
+            0xFF4B => self.regs.wx = v,
+            _ => {}
+        }
+    }
+
+    pub fn read_vram(&self, addr: u16) -> u8 {
+        self.vram[(addr - 0x8000) as usize]
+    }
+
+    pub fn write_vram(&mut self, addr: u16, value: u8) {
+        self.vram[(addr - 0x8000) as usize] = value
+    }
+
+    pub fn read_oam(&self, addr: u16) -> u8 {
+        self.oam[(addr - 0xFE00) as usize]
+    }
+
+    pub fn write_oam(&mut self, addr: u16, value: u8) {
+        self.oam[(addr - 0xFE00) as usize] = value
+    }
+
+    pub fn new(cgb: bool) -> Self {
         Self { 
             frame_buffer: [0; 160 * 144],
             dot_counter: 0, 
             ready: false,
-            ly: 0,
             mode: OamScan,
             bg_color_ids: [0; 160],
             just_enabled: false,
             was_on_last_step: false,
+
+            regs: PpuRegs::post_boot(cgb),
+
+            vram: [0; 0x2000],
+            oam: [0; 0xA0],
+
+            stat_line: false,
         }
     }
 
-    pub fn step(&mut self, cycles: u8, bus: &mut Bus) {
-        let lcdc = bus.get_lcdc();
-        let lcd_on = lcdc & 0x80 != 0;
+    pub fn step(&mut self, cycles: u8) -> PpuEvents {
+        let mut events = PpuEvents::default();
+        let lcd_on = self.regs.lcdc & 0x80 != 0;
 
         if !lcd_on {
             self.dot_counter = 0;
             self.mode = PpuMode::HBlank;
-            self.ly = 0;
-            bus.set_ly(0);
+            self.regs.ly = 0;
 
-            let stat = bus.get_stat();
-            bus.set_stat(stat & !0x07);
+            self.stat_line = false;
 
             self.was_on_last_step = false;
 
-            return;
+            return events;
         }
 
-        if lcd_on && !self.was_on_last_step {
+        if !self.was_on_last_step {
             self.dot_counter = 0;
             self.mode = PpuMode::HBlank;
             self.just_enabled = true;
@@ -82,7 +186,7 @@ impl Ppu {
             PpuMode::Drawing => {
                 while self.dot_counter >= 172 {
                     self.dot_counter -= 172;
-                    self.render_scanline(bus);
+                    self.render_scanline();
                     self.mode = PpuMode::HBlank;
                 }
             }
@@ -96,13 +200,11 @@ impl Ppu {
                 } else {
                     while self.dot_counter >= 204 {
                         self.dot_counter -= 204;
-                        self.ly += 1;
-                        bus.set_ly(self.ly);
-                        if self.ly == 144 {
+                        self.regs.ly += 1;
+                        if self.regs.ly == 144 {
                             self.mode = PpuMode::VBlank;
                             self.ready = true;
-                            bus.request_interrupt(0);
-                            bus.inc_frame();
+                            events.vblank = true;
                         } else {
                             self.mode = PpuMode::OamScan;
                         }
@@ -112,44 +214,44 @@ impl Ppu {
             PpuMode::VBlank => {
                 while self.dot_counter >= 456 {
                     self.dot_counter -= 456;
-                    self.ly += 1;
-                    if self.ly > 153 {
-                        self.ly = 0;
+                    self.regs.ly += 1;
+                    if self.regs.ly > 153 {
+                        self.regs.ly = 0;
                         self.mode = PpuMode::OamScan;
                     }
-                    bus.set_ly(self.ly);
                 }
             }
         }
 
-        self.update_stat(bus);
+        events.stat = self.update_stat_line();
+        events
     }
 
-    fn render_scanline(&mut self, bus: &Bus) {
-        let lcdc = bus.get_lcdc();
+    fn render_scanline(&mut self) {
+        let lcdc = self.regs.lcdc;
         if lcdc & 0x80 == 0 { return; } // LCD off
 
         if lcdc & 0x01 != 0 {
-            self.render_background_line(bus);
+            self.render_background_line();
         }
         if lcdc & 0x20 != 0 {
-            self.render_window_line(bus);
+            self.render_window_line();
         }
         if lcdc & 0x02 != 0 {
-            self.render_sprites_line(bus);
+            self.render_sprites_line();
         }
     }
 
-    fn render_background_line(&mut self, bus: &Bus) {
-        let lcdc = bus.get_lcdc();
-        let scy = bus.get_scy();
-        let scx = bus.get_scx();
-        let bgp = bus.get_bgp();
+    fn render_background_line(&mut self) {
+        let lcdc = self.regs.lcdc;
+        let scy = self.regs.scy;
+        let scx = self.regs.scx;
+        let bgp = self.regs.bgp;
 
         let tile_map_base: u16 = if lcdc & 0x08 != 0 { 0x9C00 } else { 0x9800 };
         let signed_tile_addressing = lcdc & 0x10 == 0; // LCDC bit 4 clear => 0x8800 signed mode
 
-        let y = self.ly.wrapping_add(scy); // which row of the 256x256 background we're on
+        let y = self.regs.ly.wrapping_add(scy); // which row of the 256x256 background we're on
         let tile_row = (y / 8) as u16;      // which tile row (0-31)
         let pixel_row_in_tile = y % 8;      // which of the 8 rows within that tile
 
@@ -159,7 +261,7 @@ impl Ppu {
             let pixel_col_in_tile = x % 8;
 
             let tile_map_addr = tile_map_base + tile_row * 32 + tile_col;
-            let tile_index = bus.read_vram(tile_map_addr);
+            let tile_index = self.read_vram(tile_map_addr);
 
             let tile_data_addr = if signed_tile_addressing {
                 let signed_index = tile_index as i8 as i16;
@@ -170,15 +272,15 @@ impl Ppu {
 
             // each row of a tile is 2 bytes (2bpp), low byte then high byte
             let row_addr = tile_data_addr + (pixel_row_in_tile as u16) * 2;
-            let low_byte = bus.read_vram(row_addr);
-            let high_byte = bus.read_vram(row_addr + 1);
+            let low_byte = self.read_vram(row_addr);
+            let high_byte = self.read_vram(row_addr + 1);
 
             // bit 7 is the leftmost pixel
             let bit = 7 - pixel_col_in_tile;
             let color_id = ((high_byte >> bit) & 1) << 1 | ((low_byte >> bit) & 1);
 
             let shade = apply_palette(color_id, bgp);
-            let fb_index = self.ly as usize * 160 + screen_x as usize;
+            let fb_index = self.regs.ly as usize * 160 + screen_x as usize;
             self.frame_buffer[fb_index] = shade_to_rgb(shade);
 
             // stash color_id for sprite priority checks later this scanline
@@ -186,23 +288,23 @@ impl Ppu {
         }
     }
 
-    fn render_window_line(&mut self, bus: &Bus) {
-        let lcdc = bus.get_lcdc();
-        let wy = bus.get_wy();
-        let wx = bus.get_wx(); // real WX is offset by 7: on-screen x = WX - 7
+    fn render_window_line(&mut self) {
+        let lcdc = self.regs.lcdc;
+        let wy = self.regs.wy;
+        let wx = self.regs.wx; // real WX is offset by 7: on-screen x = WX - 7
 
-        if self.ly < wy {
+        if self.regs.ly < wy {
             return; // window hasn't started yet on this line
         }
         if wx > 166 {
             return; // window fully off-screen
         }
 
-        let bgp = bus.get_bgp();
+        let bgp = self.regs.bgp;
         let tile_map_base: u16 = if lcdc & 0x40 != 0 { 0x9C00 } else { 0x9800 };
         let signed_tile_addressing = lcdc & 0x10 == 0;
 
-        let window_y = self.ly - wy; // window has its own internal line counter, starting at 0
+        let window_y = self.regs.ly - wy; // window has its own internal line counter, starting at 0
         let tile_row = (window_y / 8) as u16;
         let pixel_row_in_tile = window_y % 8;
 
@@ -219,7 +321,7 @@ impl Ppu {
             let pixel_col_in_tile = window_x % 8;
 
             let tile_map_addr = tile_map_base + tile_row * 32 + tile_col;
-            let tile_index = bus.read_vram(tile_map_addr);
+            let tile_index = self.read_vram(tile_map_addr);
 
             let tile_data_addr = if signed_tile_addressing {
                 let signed_index = tile_index as i8 as i16;
@@ -229,21 +331,21 @@ impl Ppu {
             };
 
             let row_addr = tile_data_addr + (pixel_row_in_tile as u16) * 2;
-            let low_byte = bus.read_vram(row_addr);
-            let high_byte = bus.read_vram(row_addr + 1);
+            let low_byte = self.read_vram(row_addr);
+            let high_byte = self.read_vram(row_addr + 1);
 
             let bit = 7 - pixel_col_in_tile;
             let color_id = ((high_byte >> bit) & 1) << 1 | ((low_byte >> bit) & 1);
 
             let shade = apply_palette(color_id, bgp);
-            let fb_index = self.ly as usize * 160 + screen_x as usize;
+            let fb_index = self.regs.ly as usize * 160 + screen_x as usize;
             self.frame_buffer[fb_index] = shade_to_rgb(shade);
             self.bg_color_ids[screen_x as usize] = color_id;
         }
     }
 
-    fn render_sprites_line(&mut self, bus: &Bus) {
-        let lcdc = bus.get_lcdc();
+    fn render_sprites_line(&mut self) {
+        let lcdc = self.regs.lcdc;
         let tall_sprites = lcdc & 0x04 != 0; // 8x16 mode
         let sprite_height: u8 = if tall_sprites { 16 } else { 8 };
 
@@ -252,13 +354,13 @@ impl Ppu {
         for i in 0..40 {
             let base = 0xFE00 + (i as u16) * 4;
             let sprite = SpriteAttr {
-                y: bus.read_oam(base).wrapping_sub(16),
-                x: bus.read_oam(base + 1).wrapping_sub(8),
-                tile: bus.read_oam(base + 2),
-                flags: bus.read_oam(base + 3),
+                y: self.read_oam(base).wrapping_sub(16),
+                x: self.read_oam(base + 1).wrapping_sub(8),
+                tile: self.read_oam(base + 2),
+                flags: self.read_oam(base + 3),
             };
 
-            let sprite_row = self.ly.wrapping_sub(sprite.y);
+            let sprite_row = self.regs.ly.wrapping_sub(sprite.y);
             if sprite_row < sprite_height {
                 visible.push((i, sprite)); // keep OAM index for tie-break ordering
                 if visible.len() == 10 {
@@ -275,10 +377,10 @@ impl Ppu {
         for (_, sprite) in visible.into_iter().rev() {
             let y_flip = sprite.flags & 0x40 != 0;
             let x_flip = sprite.flags & 0x20 != 0;
-            let palette = if sprite.flags & 0x10 != 0 { bus.get_obp1() } else { bus.get_obp0() };
+            let palette = if sprite.flags & 0x10 != 0 { self.regs.obp1 } else { self.regs.obp0 };
             let bg_priority = sprite.flags & 0x80 != 0; // true = sprite hidden behind BG color 1-3
 
-            let mut row = self.ly.wrapping_sub(sprite.y);
+            let mut row = self.regs.ly.wrapping_sub(sprite.y);
             if y_flip {
                 row = sprite_height - 1 - row;
             }
@@ -292,8 +394,8 @@ impl Ppu {
 
             let tile_data_addr = 0x8000 + (tile_index as u16) * 16; // sprites always use unsigned addressing
             let row_addr = tile_data_addr + (row_in_tile as u16) * 2;
-            let low_byte = bus.read_vram(row_addr);
-            let high_byte = bus.read_vram(row_addr + 1);
+            let low_byte = self.read_vram(row_addr);
+            let high_byte = self.read_vram(row_addr + 1);
 
             for col in 0..8u8 {
                 let screen_x = sprite.x.wrapping_add(col);
@@ -313,61 +415,42 @@ impl Ppu {
                 }
 
                 let shade = apply_palette(color_id, palette);
-                let fb_index = self.ly as usize * 160 + screen_x as usize;
+                let fb_index = self.regs.ly as usize * 160 + screen_x as usize;
                 self.frame_buffer[fb_index] = shade_to_rgb(shade);
             }
         }
     }
 
-    fn update_stat(&mut self, bus: &mut Bus) {
-        let mut stat = bus.get_stat();
+    fn update_stat_line(&mut self) -> bool {
+        let stat = self.regs.stat;
+        let coincidence = self.regs.ly == self.regs.lyc;
 
-        // mode bits (0-1)
-        let mode_bits = match self.mode {
-            PpuMode::HBlank => 0,
-            PpuMode::VBlank => 1,
-            PpuMode::OamScan => 2,
-            PpuMode::Drawing => 3,
-        };
-        stat = (stat & !0x03) | mode_bits;
+        let line = (coincidence && stat & 0x40 != 0)
+            || (matches!(self.mode, PpuMode::HBlank)  && stat & 0x08 != 0)
+            || (matches!(self.mode, PpuMode::VBlank)  && stat & 0x10 != 0)
+            || (matches!(self.mode, PpuMode::OamScan) && stat & 0x20 != 0);
 
-        // coincidence flag (bit 2): LY == LYC
-        let lyc = bus.get_lyc();
-        let coincidence = self.ly == lyc;
-        stat = if coincidence { stat | 0x04 } else { stat & !0x04 };
-
-        bus.set_stat(stat);
-
-        // STAT interrupt sources (bits 3-6 are enable-selects, not raw status):
-        // bit 3 = HBlank int enable, bit 4 = VBlank int enable,
-        // bit 5 = OAM int enable, bit 6 = LYC==LY int enable
-        let mut fire = false;
-        if coincidence && stat & 0x40 != 0 { fire = true; }
-        match self.mode {
-            PpuMode::HBlank  if stat & 0x08 != 0 => fire = true,
-            PpuMode::VBlank  if stat & 0x10 != 0 => fire = true,
-            PpuMode::OamScan if stat & 0x20 != 0 => fire = true,
-            _ => {}
-        }
-
-        if fire {
-            bus.request_interrupt(1);
-        }
+        let rising = line && !self.stat_line;
+        self.stat_line = line;
+        rising
     }
 
-    fn update_stat_suppressed(&mut self, bus: &mut Bus) {
-        let mut stat = bus.get_stat();
-        stat = (stat & !0x03) | 0x02; // mode 2, OamScan
-        let lyc = bus.get_lyc();
-        let coincidence = self.ly == lyc;
-        stat = if coincidence { stat | 0x04 } else { stat & !0x04 };
-        bus.set_stat(stat);
-
-        // Only the LYC==LY interrupt source is live here — OAM IRQ is suppressed
-        if coincidence && stat & 0x40 != 0 {
-            bus.request_interrupt(1);
-        }
+    fn update_stat_line_suppressed(&mut self) -> bool {
+        let coincidence = self.regs.ly == self.regs.lyc;
+        let line = coincidence && self.regs.stat & 0x40 != 0;
+        let rising = line && !self.stat_line;
+        self.stat_line = line;
+        rising
     }
+
+    fn mode_bits(&self) -> u8 {
+    match self.mode {
+        PpuMode::HBlank  => 0,
+        PpuMode::VBlank  => 1,
+        PpuMode::OamScan => 2,
+        PpuMode::Drawing => 3,
+    }
+}
 }
 
 fn apply_palette(color_id: u8, palette: u8) -> u8 {
