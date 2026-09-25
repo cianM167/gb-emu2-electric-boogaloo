@@ -391,6 +391,8 @@ impl Bus {
                 }
             }
 
+            0xFF56 => (),// ignore for cgb not done yet
+
             0xFF75..=0xFF7F => (),// unused
             
             0xFFFF => self.ie = value,
@@ -419,7 +421,7 @@ impl Bus {
         let ev = self.ppu.step(t);
         if ev.vblank { self.request_interrupt(0); self.inc_frame(); }
         if ev.stat { self.request_interrupt(1); }
-        self.apu.step(t as u32);
+        // self.apu.step(t as u32);
 
         #[cfg(debug_assertions)]
         { self.tick_count += 1; }
