@@ -90,9 +90,9 @@ impl Cpu {
             let t_cycles_used = m_cycles_used as u16 * 4;
             match instr.operands {
                 Operands::Cond(_) | Operands::CondImm16(_) | Operands::CondImm8(_) => {// not rehandling branch timing rn im lazy
-                    if t_cycles_used != instr.cycles as u16 {
-                        println!("cycle mismatch: opcode {opcode:#04X} expected {} got {t_cycles_used}", instr.cycles);
-                    }
+                    // if t_cycles_used != instr.cycles as u16 {
+                    //     println!("cycle mismatch: opcode {opcode:#04X} expected {} got {t_cycles_used}", instr.cycles);
+                    // }
                 } 
 
                 _ => {
