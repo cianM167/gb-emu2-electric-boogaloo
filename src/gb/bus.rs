@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 
-use crate::gb::{apu::{Apu, Channel::{Ch1, Ch2, Ch3, Ch4}}, bus_state::BusState, cartridge::Cartridge};
+use crate::gb::{apu::{Apu, Channel::{Ch1, Ch2, Ch3, Ch4}}, bus_state::BusState, cartridge::Cartridge, ppu::Ppu};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Joypad {
@@ -14,13 +14,10 @@ pub struct Joypad {
 pub struct Bus {
     pub cart: Cartridge,
     pub apu: Apu,
+    pub ppu: Ppu,
 
     ie: u8,
     iflag: u8,
-
-    ly: u8,
-    lyc: u8,
-    stat: u8,
 
     div: u16,
     tima: u8,
@@ -30,23 +27,12 @@ pub struct Bus {
     tima_reload_pending: bool,
     tima_reload_delay: u8,
 
-    vram: [u8; 0x2000],
     wram: [u8; 0x2000],
-    oam: [u8; 0xA0],
     hram: [u8; 0x7F],
 
     wave_ram: [u8; 0x10],
 
     joyp: u8,
-
-    lcdc: u8,
-    bgp: u8,
-    opb0: u8,
-    opb1: u8,
-    scx: u8,
-    scy : u8,
-    wx: u8,
-    wy: u8,
 
     serial_data: u8,
     serial_in: u8,
@@ -54,25 +40,27 @@ pub struct Bus {
 
     // cgb regs
     spd: u8,
+    pub double_speed: bool,
 
     // inaccurate bullshit
     dma_source: u8,
     pub joypad: Joypad,
     frame: u32,
+
+    // for checking timing
+    // #[cfg(debug_assertions)]
+    pub tick_count: u64,
 }
 
 impl Bus {
-    pub fn new(cart: Cartridge) -> Self {
+    pub fn new(cart: Cartridge, cgb: bool) -> Self {
         Self {
             cart,
             apu: Apu::default(),
+            ppu: Ppu::new(cgb),
 
             ie: 0,
             iflag: 0xE1,
-
-            ly: 0,
-            lyc: 0,
-            stat: 0x85,
 
             div: 0x0000,
             tima: 0,
@@ -82,23 +70,12 @@ impl Bus {
             tima_reload_pending: false,
             tima_reload_delay: 0,
 
-            vram: [0; 0x2000],
             wram: [0; 0x2000],
-            oam: [0; 0xA0],
             hram: [0xFF; 0x7F],
 
             wave_ram: [0; 0x10],
 
             joyp: 0x3F,
-
-            lcdc: 0x91,
-            bgp: 0xFC,
-            opb0: 0xFF,
-            opb1: 0xFF,
-            scx: 0,
-            scy: 0,
-            wx: 0,
-            wy: 0,
 
             serial_data: 0,
             serial_in: 0,
@@ -106,10 +83,13 @@ impl Bus {
 
             // cgb regs
             spd: 0,
+            double_speed: false,
 
             dma_source: 0,
             joypad: Joypad::default(),
             frame: 0,
+
+            tick_count: 0,
         }
     }
 
@@ -125,60 +105,12 @@ impl Bus {
         self.frame
     }
 
-    pub fn get_scy(&self) -> u8 {
-        self.scy
-    }
-
-    pub fn get_scx(&self) -> u8 {
-        self.scx
-    }
-
-    pub fn get_wy(&self) -> u8 {
-        self.wy
-    }
-
-    pub fn get_wx(&self) -> u8 {
-        self.wx
-    }
-
-    pub fn get_bgp(&self) -> u8 {
-        self.bgp
-    }
-
-    pub fn get_lcdc(&self) -> u8 {
-        self.lcdc
-    }
-
-    pub fn get_ly(&self) -> u8 {
-        self.ly
-    }
-
-    pub fn set_ly(&mut self , value: u8) {
-        self.ly = value
-    }
-
-    pub fn get_lyc(&self) -> u8 {
-        self.lyc
-    }
-
-    pub fn set_lyc(&mut self , value: u8) {
-        self.lyc = value
-    }
-
     pub fn get_ie(&self) -> u8 {
         self.ie
     }
 
     pub fn get_iflag(&self) -> u8 {
         self.iflag
-    }
-
-    pub fn get_stat(&self) -> u8 {
-        self.stat
-    }
-
-    pub fn set_stat(&mut self, value: u8) {
-        self.stat = value
     }
 
     pub fn get_tac(&self) -> u8 {
@@ -213,22 +145,6 @@ impl Bus {
         self.iflag |= 1 << bit;
     }
 
-    pub fn read_vram(&self, addr: u16) -> u8 {
-        self.vram[(addr - 0x8000) as usize]
-    }
-
-    pub fn read_oam(&self, addr: u16) -> u8 {
-        self.oam[(addr - 0xFE00) as usize]
-    }
-
-    pub fn get_obp0(&self) -> u8 {
-        self.opb0
-    }
-
-    pub fn get_obp1(&self) -> u8 {
-        self.opb1
-    }
-
     pub fn read(&self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x7FFF => self.cart.mapper.read(addr),// cartridge address range
@@ -238,7 +154,7 @@ impl Bus {
             }
 
             0x8000..=0x9FFF => {
-                self.vram[(addr - 0x8000) as usize]
+                self.ppu.read_vram(addr)
             }
 
             0xC000..=0xDFFF => {
@@ -326,25 +242,7 @@ impl Bus {
 
             0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30],
 
-            0xFF40 => {
-                // println!("LCDC UNFINISHED");
-                self.lcdc
-            },
-            0xFF41 => (self.stat & 0x7F) | 0x80,
-            0xFF42 => self.scy,
-            0xFF43 => self.scx,
-            0xFF44 => {
-                // self.ly,//needs to be hacked to 0x90 to pass some tests
-                self.ly
-            },
-            0xFF45 => self.lyc,
-
-            0xFF47 => self.bgp,
-            0xFF48 => self.opb0,
-            0xFF49 => self.opb1,
-
-            0xFF4A => self.wy,
-            0xFF4B => self.wx,
+            0xFF40..=0xFF45 | 0xFF47..=0xFF4B => self.ppu.read_reg(addr),
 
             0xFF4D => self.spd,
 
@@ -352,7 +250,7 @@ impl Bus {
                 self.hram[(addr - 0xFF80) as usize]
             }
 
-            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
+            0xFE00..=0xFE9F => self.ppu.read_oam(addr),
 
             0xFEA0..=0xFEFF => 0xFF,
 
@@ -377,7 +275,7 @@ impl Bus {
             }
 
             0x8000..=0x9FFF => {
-                self.vram[(addr - 0x8000) as usize] = value
+                self.ppu.write_vram(addr, value);
             }
 
             0xC000..=0xDFFF => {
@@ -467,27 +365,7 @@ impl Bus {
 
             0xFF30..=0xFF3F => self.wave_ram[addr as usize - 0xFF30] = value,
 
-            0xFF40 => {
-                // println!("LCDC UNFINISHED");
-                self.lcdc = value
-            },
-            0xFF41 => {
-                // println!(":(");
-                self.stat = value | 0x80
-            },
-            0xFF42 => self.scy = value,
-            0xFF43 => self.scx = value,
-            0xFF44 => (),
-            0xFF45 => self.lyc = value,
-
-            0xFF47 => self.bgp = value,
-            0xFF48 => self.opb0 = value,
-            0xFF49 => self.opb1 = value,
-
-            0xFF56 => self.rp = value,// ir port
-
-            0xFF4A => self.wy = value,
-            0xFF4B => self.wx = value,
+            0xFF40..=0xFF45 | 0xFF47..=0xFF4B => self.ppu.write_reg(addr, value),
 
             0xFF4D => self.spd = value,
             0xFF4F => (),// cgb vram bank ignore for now
@@ -496,7 +374,7 @@ impl Bus {
                 self.hram[(addr - 0xFF80) as usize] = value;
             }
 
-            0xFE00..=0xFE9F => self.oam[(addr -0xFE00) as usize] = value,
+            0xFE00..=0xFE9F => self.ppu.write_oam(addr, value),
 
             0xFEA0..=0xFEFF => {
                 // unusable ignore
@@ -509,7 +387,7 @@ impl Bus {
                 let src_base = (value as u16) << 8;
                 for i in 0..0xA0u16 {
                     let data = self.read(src_base + i);
-                    self.oam[i as usize] = data;
+                    self.ppu.write_oam(addr, value);
                 }
             }
 
@@ -532,6 +410,19 @@ impl Bus {
     pub fn write_u16(&mut self, addr: u16, value: u16) {
         self.write(addr, (value & 0xFF) as u8);
         self.write(addr+1, (value >> 8) as u8);
+    }
+
+    pub fn tick(&mut self, double_speed: bool) {
+        self.step_timer(4);
+        // add dma here later :)
+        let t = if double_speed { 2 } else { 4 };
+        let ev = self.ppu.step(t);
+        if ev.vblank { self.request_interrupt(0); self.inc_frame(); }
+        if ev.stat { self.request_interrupt(1); }
+        self.apu.step(t as u32);
+
+        #[cfg(debug_assertions)]
+        { self.tick_count += 1; }
     }
 
     pub fn step_timer(&mut self, cycles: u8) {
@@ -573,12 +464,32 @@ impl Bus {
         }
     }
 
+    pub fn read_cycle(&mut self, addr: u16) -> u8 {
+        let value = self.read(addr);
+        self.tick(self.double_speed);
+        value
+    }
+
+    pub fn write_cycle(&mut self, addr: u16, value: u8) {
+        self.write(addr, value);
+        self.tick(self.double_speed);
+    }
+
+    pub fn read_u16_cycle(&mut self, addr: u16) -> u16 {
+        let lo = self.read_cycle(addr)as u16;
+        let hi = self.read_cycle(addr+1) as u16;
+        (hi << 8) | lo
+    }
+
+    pub fn write_u16_cycle(&mut self, addr: u16, value: u16) {
+        self.write_cycle(addr, (value & 0xFF) as u8);
+        self.write_cycle(addr+1, (value >> 8) as u8);
+    }
+
     pub fn to_state(&self) -> BusState {
         BusState {
-            vram: self.vram.to_vec(),
             wram: self.wram.to_vec(),
             hram: self.hram.to_vec(),
-            oam: self.oam.to_vec(),
             joyp: self.joyp,
             iflag: self.iflag,
             ie: self.ie,
@@ -586,26 +497,14 @@ impl Bus {
             tima: self.tima,
             tma: self.tma,
             tac: self.tac,
-            lcdc: self.lcdc,
-            stat: self.stat,
-            scy: self.scy,
-            scx: self.scx,
-            ly: self.ly,
-            bgp: self.bgp,
-            opb0: self.opb0,
-            opb1: self.opb1,
-            wy: self.wy,
-            wx: self.wx,
             dma_source: self.dma_source,
             joypad: self.joypad.clone(), 
         }
     }
 
     pub fn load_state(&mut self, state: BusState) {
-        self.vram.copy_from_slice(&state.vram);
         self.wram.copy_from_slice(&state.wram);
         self.hram.copy_from_slice(&state.hram);
-        self.oam.copy_from_slice(&state.oam);
         self.joyp = state.joyp;
         self.iflag = state.iflag;
         self.ie = state.ie;
@@ -613,16 +512,6 @@ impl Bus {
         self.tima = state.tima;
         self.tma = state.tma;
         self.tac = state.tac;
-        self.lcdc = state.lcdc;
-        self.stat = state.stat;
-        self.scy = state.scy;
-        self.scx = state.scx;
-        self.ly = state.ly;
-        self.bgp = state.bgp;
-        self.opb0 = state.opb0;
-        self.opb1 = state.opb1;
-        self.wy = state.wy;
-        self.wx = state.wx;
         self.dma_source = state.dma_source;
         self.joypad = state.joypad;
     }

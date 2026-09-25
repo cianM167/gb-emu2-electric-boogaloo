@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (stream, sample_rate) = setup_audio(consumer);
     stream.play().unwrap();
 
-    let mut gb = GameBoy::new(cart, producer, sample_rate);
+    let mut gb = GameBoy::new(cart, producer, sample_rate, args.cgb_mode);
 
     gb.run(&args);
 

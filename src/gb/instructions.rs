@@ -116,7 +116,6 @@ pub fn unimplemented(instr: &Instruction, cpu: &mut Cpu, _: &mut Bus) -> u8 {
 }
 
 pub fn nop(instr: &Instruction, cpu: &mut Cpu, _: &mut Bus) -> u8 {
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
 
     instr.cycles
 }
@@ -129,82 +128,71 @@ fn ld_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let val = cpu.registers.get8(src);
     cpu.registers.set8(dst, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
     instr.cycles
 }
 
 fn ld_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
-    let val = bus.read(pc);
+    let val = cpu.fetch8(bus);
     cpu.registers.set8(dst, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
     instr.cycles as u8
 }
 
 fn ld_mem_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::MemImm8(mem) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc().wrapping_add(1);
 
-    let value = bus.read(pc);
+    let value = cpu.fetch8(bus);
 
     let addr = match mem {
         MemTarget::Reg16(reg) => cpu.registers.get16(reg),
         _ => unreachable!(),
     };
 
-    bus.write(addr, value);
+    bus.write_cycle(addr, value);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn ld_rr_n16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16Imm16(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
-    let val = bus.read_u16(pc);
+    let val = cpu.fetch16(bus);
     cpu.registers.set16(dst, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
     instr.cycles
 }
 
 fn ld_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegMem(dst, mem) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let addr = match mem {
         MemTarget::Reg16(reg) => cpu.registers.get16(reg),
-        MemTarget::Imm16 => bus.read_u16(pc),
+        MemTarget::Imm16 => cpu.fetch16(bus),
         _ => unreachable!()
     };
 
-    let val = bus.read(addr);
+    let val = bus.read_cycle(addr);
 
     cpu.registers.set8(dst, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn ld_mem_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::MemReg(mem, src) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let addr = match mem {
         MemTarget::Reg16(reg) => cpu.registers.get16(reg),
-        MemTarget::Imm16 => bus.read_u16(pc),
+        MemTarget::Imm16 => cpu.fetch16(bus),
         _ => unreachable!()
     };
 
     let val = cpu.registers.get8(src);
 
-    bus.write(addr, val);
+    bus.write_cycle(addr, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -215,16 +203,14 @@ fn ld_rr_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(dst, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
-    instr.cycles// i think this is right
+    instr.cycles
 }
 
 fn ld_rr_rr_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16Reg16Offset(dst, src) = instr.operands else { unreachable!() };
 
     let sp = cpu.registers.get16(src);
-    let pc = cpu.registers.get_pc().wrapping_add(1);
-    let offset = bus.read(pc);
+    let offset = cpu.fetch8(bus);
 
     let result = sp.wrapping_add((offset as i8) as i16 as u16);
 
@@ -235,7 +221,6 @@ fn ld_rr_rr_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(dst, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -245,56 +230,47 @@ fn ld_mem_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let value = cpu.registers.get16(src);
 
     let addr = match mem {
-        MemTarget::Imm16 => {
-            let pc = cpu.registers.get_pc() + 1;
-            bus.read_u16(pc)
-        },
+        MemTarget::Imm16 => cpu.fetch16(bus),
         MemTarget::Reg16(reg) => cpu.registers.get16(reg),
         _ => unreachable!()
     };
 
-    bus.write_u16(addr, value);
+    bus.write_u16_cycle(addr, value);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn ldh_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegMem(dest, mem) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
     let offset = match mem {
         MemTarget::HighC => cpu.registers.get_c() as u16,
-        MemTarget::HighImm8 => bus.read(pc) as u16,
+        MemTarget::HighImm8 => cpu.fetch8(bus) as u16,
         _ => unreachable!()
     };
     let addr = 0xFF00_u16.wrapping_add(offset);
 
-    let value = bus.read(addr);
+    let value = bus.read_cycle(addr);
 
     cpu.registers.set8(dest, value);
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
 
     instr.cycles
 }
 
 fn ldh_mem_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::MemReg(mem, src) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
     let val = cpu.registers.get8(src);
 
     let offset = match mem {
         MemTarget::HighC => cpu.registers.get_c() as u16,
-        MemTarget::HighImm8 => bus.read(pc) as u16,
+        MemTarget::HighImm8 => cpu.fetch8(bus) as u16,
         _ => unreachable!()
     };
     let addr = 0xFF00 + offset;
 
-    bus.write(addr, val);
+    bus.write_cycle(addr, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
     instr.cycles
 }
 
@@ -312,8 +288,6 @@ fn inc_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, (old & 0x0F) + 1 > 0x0F);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
-
     instr.cycles
 }
 
@@ -325,16 +299,15 @@ fn inc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
     let new = old.wrapping_add(1);
 
-    bus.write(addr, new);
+    bus.write_cycle(addr, new);
 
     cpu.registers.set_flag_to(FlagBits::Z, new == 0);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, (old & 0x0F) + 1 > 0x0F);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -350,8 +323,6 @@ fn dec_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, true);
     cpu.registers.set_flag_to(FlagBits::H, old & 0x0F == 0);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
-
     instr.cycles
 }
 
@@ -363,17 +334,15 @@ fn dec_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!()
     };
 
-    let old = bus.read(addr);
+    let old = bus.read_cycle(addr);
 
     let new = old.wrapping_sub(1);
 
-    bus.write(addr, new);
+    bus.write_cycle(addr, new);
 
     cpu.registers.set_flag_to(FlagBits::Z, new == 0);
     cpu.registers.set_flag_to(FlagBits::N, true);
     cpu.registers.set_flag_to(FlagBits::H, old & 0x0F == 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
 
     instr.cycles
 }
@@ -386,7 +355,7 @@ fn inc_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(src, new);
 
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
@@ -398,12 +367,6 @@ fn dec_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let new = old.wrapping_sub(1);
 
     cpu.registers.set16(src, new);
-
-    // cpu.registers.set_flag_to(FlagBits::Z, new == 0);
-    // cpu.registers.set_flag_to(FlagBits::N, true);
-    // cpu.registers.set_flag_to(FlagBits::H, old & 0x0F == 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
 
     instr.cycles
 }
@@ -426,7 +389,6 @@ fn add_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dest, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -439,7 +401,7 @@ fn add_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     };
 
     let reg1 = cpu.registers.get8(dest);
-    let reg2 = bus.read(addr);
+    let reg2 = bus.read_cycle(addr);
 
     let sum16 = reg1 as u16 + reg2 as u16;
     let result = (sum16 & 0xFF) as u8;
@@ -451,16 +413,14 @@ fn add_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dest, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn add_r_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dest) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let reg1 = cpu.registers.get8(dest);
-    let reg2 = bus.read(pc);
+    let reg2 = cpu.fetch8(bus);
 
     let sum16 = reg1 as u16 + reg2 as u16;
     let result = (sum16 & 0xFF) as u8;
@@ -472,18 +432,16 @@ fn add_r_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dest, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn adc_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dest) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let carry = cpu.registers.get_flag(FlagBits::C) as u8;
 
     let reg1 = cpu.registers.get8(dest);
-    let reg2 = bus.read(pc);
+    let reg2 = cpu.fetch8(bus);
 
     let sum16 = (reg1 as u16 + reg2 as u16) + carry as u16;
     let result = (sum16 & 0xFF) as u8;
@@ -495,7 +453,6 @@ fn adc_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dest, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -517,7 +474,6 @@ fn adc_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dst, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -531,7 +487,7 @@ fn adc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     let carry = cpu.registers.get_flag(FlagBits::C) as u8;
 
-    let reg1 = bus.read(addr);
+    let reg1 = bus.read_cycle(addr);
     let reg2 = cpu.registers.get8(dst);
 
     let sum16 = (reg1 as u16 + reg2 as u16) + carry as u16;
@@ -544,7 +500,6 @@ fn adc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set8(dst, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -556,6 +511,7 @@ fn add_rr_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     let sum32 = reg1 as u32 + reg2 as u32;
     let result = (sum32 & 0xFFFF) as u16;
+    bus.tick(bus.double_speed);// uhh should probably fix that
 
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0FFF) + (reg2 & 0x0FFF) > 0x0FFF);
@@ -563,16 +519,14 @@ fn add_rr_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(dest, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn add_rr_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16Imm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc().wrapping_add(1);
 
     let reg1 = cpu.registers.get16(dst);
-    let offset = bus.read(pc);
+    let offset = cpu.fetch8(bus);
 
     let result= (reg1 as i16).wrapping_add((offset as i8) as i16) as u16;
 
@@ -583,7 +537,9 @@ fn add_rr_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set16(dst, result);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
+    bus.tick(bus.double_speed);
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -602,17 +558,14 @@ fn sub_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
 
     cpu.registers.set8(dest, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn sub_r_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dest) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let reg1 = cpu.registers.get8(dest);
-    let reg2 = bus.read(pc);
+    let reg2 = cpu.fetch8(bus);
 
     let diff16 = (reg1 as u16).wrapping_sub(reg2 as u16);
     let result = (diff16 & 0xFF) as u8;
@@ -623,8 +576,6 @@ fn sub_r_d8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
 
     cpu.registers.set8(dest, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -648,8 +599,6 @@ fn sub_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
 
     cpu.registers.set8(dst, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -668,17 +617,14 @@ fn cp_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, true);
     cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0F) < (reg2 & 0x0F));
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn cp_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dest) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
     let reg1 = cpu.registers.get8(dest);
-    let reg2 = bus.read(pc);
+    let reg2 = cpu.fetch8(bus);
 
     let diff16 = (reg1 as u16).wrapping_sub(reg2 as u16);
     let result = (diff16 & 0xFF) as u8;
@@ -688,7 +634,6 @@ fn cp_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0F) < (reg2 & 0x0F));
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -710,8 +655,6 @@ fn cp_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, true);
     cpu.registers.set_flag_to(FlagBits::H, (reg1 & 0x0F) < (reg2 & 0x0F));
     cpu.registers.set_flag_to(FlagBits::C, reg1 < reg2);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -727,8 +670,6 @@ fn or_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 { // freddy f
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -740,7 +681,7 @@ fn or_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!()
     };
 
-    let result = cpu.registers.get8(dst) | bus.read(addr);
+    let result = cpu.registers.get8(dst) | bus.read_cycle(addr);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -748,7 +689,6 @@ fn or_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -765,8 +705,6 @@ fn or_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, false);
     
     cpu.registers.set8(dst, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -781,15 +719,13 @@ fn xor_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn xor_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
-    let result = cpu.registers.get8(dst) ^ bus.read(pc);
+    let result = cpu.registers.get8(dst) ^ cpu.fetch8(bus);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -797,7 +733,6 @@ fn xor_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -809,7 +744,7 @@ fn xor_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         _ => unreachable!(),
     };
 
-    let result = cpu.registers.get8(dst) ^ bus.read(addr);
+    let result = cpu.registers.get8(dst) ^ bus.read_cycle(addr);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -817,7 +752,6 @@ fn xor_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -832,15 +766,13 @@ fn and_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, true);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn and_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::RegImm8(dst) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
 
-    let result = cpu.registers.get8(dst) & bus.read(pc);
+    let result = cpu.registers.get8(dst) & cpu.fetch8(bus);
     cpu.registers.set8(dst, result);
 
     cpu.registers.set_flag_to(FlagBits::Z, result == 0);
@@ -848,7 +780,6 @@ fn and_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, true);
     cpu.registers.set_flag_to(FlagBits::C, false);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -867,8 +798,6 @@ fn and_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, true);
     cpu.registers.set_flag_to(FlagBits::C, false);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -898,8 +827,6 @@ fn sbc_r_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     );
 
     cpu.registers.set8(dst, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -928,8 +855,6 @@ fn sbc_r_n8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     );
 
     cpu.registers.set8(dst, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -962,36 +887,31 @@ fn sbc_r_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     );
 
     cpu.registers.set8(dst, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 // jp instructions
 
 fn jp_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
-    // read from rom
-    // pc + 1, pc + 2
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
-    let dest = bus.read_u16(pc);
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    let dest = cpu.fetch16(bus);
 
     cpu.registers.set_pc(dest);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
 
 fn jp_cc_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::CondImm16(cond) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
 
-    let dest = bus.read_u16(pc);
-    cpu.registers.inc_pc_by(instr.size as u16);
+    let dest = cpu.fetch16(bus);
 
     if cpu.registers.check_conditions(cond) {
         cpu.registers.set_pc(dest);
+
+        bus.tick(bus.double_speed);
 
         16
     } else {
@@ -1002,9 +922,7 @@ fn jp_cc_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 fn jp_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16(src) = instr.operands else { unreachable!() };
 
-    let dest = cpu.registers.get16(src);
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    let dest = cpu.registers.get16(src);// increment pc by instruction size
 
     cpu.registers.set_pc(dest);
 
@@ -1012,30 +930,26 @@ fn jp_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 }
 
 fn jr_r8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
-    let pc = cpu.registers.get_pc() + 1;// offsetting from instruction
-
-    let offset = bus.read(pc) as i8;
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    let offset = cpu.fetch8(bus) as i8;// increment pc by instruction size
 
     let dest = cpu.registers.get_pc().wrapping_add_signed(offset as i16);
 
     cpu.registers.set_pc(dest);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
 
 fn jr_cc_e8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::CondImm8(cond) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
-    let offset = bus.read(pc) as i8;
-
-    cpu.registers.inc_pc_by(instr.size as u16);// increment pc by instruction size
+    let offset = cpu.fetch8(bus) as i8;// increment pc by instruction size
 
     let dest = cpu.registers.get_pc().wrapping_add_signed(offset as i16);
 
     if cpu.registers.check_conditions(cond) {
         cpu.registers.set_pc(dest);
+        bus.tick(bus.double_speed);
         12
     } else {
         8
@@ -1046,32 +960,27 @@ fn jr_cc_e8(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
 fn call_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Imm16 = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
+    let addr = cpu.fetch16(bus);
 
-    let addr = bus.read_u16(pc);
-
-    cpu.registers.dec_sp(2);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
-    bus.write_u16(cpu.registers.get_sp(), cpu.registers.get_pc());
+    cpu.push16(bus, cpu.registers.get_pc());
 
     cpu.registers.set_pc(addr);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
 
 fn call_cc_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::CondImm16(cond) = instr.operands else { unreachable!() };
-    let pc = cpu.registers.get_pc() + 1;
-    let addr = bus.read_u16(pc);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
+    let addr = cpu.fetch16(bus);
 
     if cpu.registers.check_conditions(cond) {
-        cpu.registers.dec_sp(2);
-        bus.write_u16(cpu.registers.get_sp(), cpu.registers.get_pc());
+        cpu.push16(bus, cpu.registers.get_pc());
 
         cpu.registers.set_pc(addr);
+
+        bus.tick(bus.double_speed);
 
         24
     } else {
@@ -1080,21 +989,24 @@ fn call_cc_a16(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 }
 
 fn ret(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
-    let addr = bus.read_u16(cpu.registers.get_sp());
-    cpu.registers.inc_sp(2);
+    let addr = cpu.pop16(bus);
 
     cpu.registers.set_pc(addr);
+
+    bus.tick(bus.double_speed);
 
     instr.cycles
 }
 
 fn ret_cc(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Cond(cond) = instr.operands else { unreachable!() };
-    let addr = bus.read_u16(cpu.registers.get_sp());
+    bus.tick(bus.double_speed);
 
     if cpu.registers.check_conditions(cond) {
-        cpu.registers.inc_sp(2);
+        let addr = cpu.pop16(bus);
         cpu.registers.set_pc(addr);
+
+        bus.tick(bus.double_speed);
         
         20
     } else {
@@ -1135,21 +1047,21 @@ fn push_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16(src) = instr.operands else { unreachable!() };
 
     cpu.registers.dec_sp(2);
-    bus.write_u16(cpu.registers.get_sp(), cpu.registers.get16(src));
+    bus.write_u16_cycle(cpu.registers.get_sp(), cpu.registers.get16(src));
 
-    cpu.registers.inc_pc_by(instr.size as u16);
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
 fn pop_rr(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let Operands::Reg16(dst) = instr.operands else { unreachable!() };
 
-    let val = bus.read_u16(cpu.registers.get_sp());
+    let val = bus.read_u16_cycle(cpu.registers.get_sp());
     cpu.registers.inc_sp(2);
 
     cpu.registers.set16(dst, val);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1159,8 +1071,7 @@ fn scf(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, true);
-    
-    cpu.registers.inc_pc_by(instr.size as u16);
+
     instr.cycles
 }
 
@@ -1168,8 +1079,7 @@ fn ccf(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, !(cpu.registers.get_flag(FlagBits::C)));
-    
-    cpu.registers.inc_pc_by(instr.size as u16);
+
     instr.cycles
 }
 
@@ -1180,10 +1090,8 @@ fn halt(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// bugged?
 
     if pending && !cpu.ime {
         cpu.halt_bug = true;
-        cpu.registers.inc_pc_by(instr.size as u16);
     } else {
         cpu.halted = true;
-        cpu.registers.inc_pc_by(instr.size as u16);
     }
 
     instr.cycles
@@ -1193,37 +1101,44 @@ fn stop(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {// not touchin
     let switch = bus.read(0xFF4D) & 0x01 != 0;
 
     if switch {
-        cpu.double_speed = !cpu.double_speed;
-        let new = (cpu.double_speed as u8) << 7;
+        bus.double_speed = !bus.double_speed;
+        let new = (bus.double_speed as u8) << 7;
         bus.write(0xFF4D, new);
     } else {
         panic!("IDK HOW THIS INSTRUCTION WORKS HELP")
     }
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn di(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.ime = false;
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
 fn cb(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
-    let pc = cpu.registers.get_pc() + 1;
-    let opcode = bus.read(pc);
+    #[cfg(debug_assertions)]
+    let start = bus.tick_count;
+    
+    let opcode = cpu.fetch8(bus);
 
     let next = opcodes_cb()[opcode as usize].expect(&*format!("Unknown opcode {:#02X}", opcode));
 
-   (next.execute)(&next, cpu, bus)
+   let cycles = (next.execute)(&next, cpu, bus);
+   #[cfg(debug_assertions)]
+    {
+        let t = (bus.tick_count - start) * 4;
+        debug_assert_eq!(
+            t, next.cycles as u64,
+            "cycle mismatch: CB opcode {opcode:#04X} expected {} got {t}",
+            next.cycles
+        );
+    }
+
+    cycles
 }
 
 fn ei(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.enable_ime_next = true;
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1260,8 +1175,6 @@ fn daa(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry || cpu.registers.get_flag(FlagBits::C));
 
-    cpu.registers.inc_pc_by(instr.size as u16);
-
     instr.cycles
 }
 
@@ -1270,8 +1183,6 @@ fn cpl(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
 
     cpu.registers.set_flag_to(FlagBits::N, true);
     cpu.registers.set_flag_to(FlagBits::H, true);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
 
     instr.cycles   
 }
@@ -1294,7 +1205,8 @@ fn srl_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry != 0);
 
-    cpu.registers.inc_pc_by(instr.size as u16);
+    bus.tick(bus.double_speed);
+
     instr.cycles
 }
 
@@ -1316,8 +1228,6 @@ fn srl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry != 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1336,8 +1246,6 @@ fn rr_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1361,8 +1269,6 @@ fn rr_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1379,8 +1285,6 @@ fn rrc_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1395,8 +1299,6 @@ fn rrca(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1418,8 +1320,6 @@ fn rrc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1438,8 +1338,6 @@ fn rl_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1463,8 +1361,6 @@ fn rl_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1481,8 +1377,6 @@ fn rla(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1499,8 +1393,6 @@ fn rra(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1518,8 +1410,6 @@ fn rlc(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, highest != 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1535,8 +1425,6 @@ fn rlca(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, highest != 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1559,8 +1447,6 @@ fn rlc_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, highest != 0);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1580,8 +1466,6 @@ fn sla_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1604,8 +1488,6 @@ fn sla_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1624,8 +1506,6 @@ fn sra_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1649,8 +1529,6 @@ fn sra_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, false);
     cpu.registers.set_flag_to(FlagBits::C, carry);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1674,8 +1552,6 @@ fn swap_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, false);
 
     cpu.registers.set8(src, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1702,8 +1578,6 @@ fn swap_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::C, false);
 
     bus.write(addr, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1718,8 +1592,6 @@ fn bit_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::Z, zero);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, true);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1737,8 +1609,6 @@ fn bit_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     cpu.registers.set_flag_to(FlagBits::Z, zero);
     cpu.registers.set_flag_to(FlagBits::N, false);
     cpu.registers.set_flag_to(FlagBits::H, true);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1750,8 +1620,6 @@ fn res_r(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let old = cpu.registers.get8(src);
     let result = old & !(1 << bit);
     cpu.registers.set8(src, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1766,8 +1634,6 @@ fn res_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let old = bus.read(addr);
     let result = old & !(1 << bit);
     bus.write(addr, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1785,8 +1651,6 @@ fn set_mem(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result= value | (1 << bit);
 
     bus.write(addr, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 
@@ -1797,8 +1661,6 @@ fn set_reg(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     let result= value | (1 << bit);
 
     cpu.registers.set8(reg, result);
-
-    cpu.registers.inc_pc_by(instr.size as u16);
     instr.cycles
 }
 

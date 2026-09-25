@@ -15,3 +15,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde-big-array = "0.5.1"
 serde_json = "1.0.151"
 wasmtime = "48.0.2"
+
+[profile.checked]
+inherits = "release"
+debug-assertions = true

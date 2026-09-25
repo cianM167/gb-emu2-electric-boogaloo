@@ -74,18 +74,20 @@ impl Tracer {
     }
 
     fn log(
-        &mut self, 
-        regs: (u8, u8, u8, u8, u8, u8, u8, u8, u16, u16), 
-        pcmem: (u8, u8, u8, u8), 
-        ppu: (u8,u8,u8), 
+        &mut self,
+        regs: (u8, u8, u8, u8, u8, u8, u8, u8, u16, u16),
+        pcmem: (u8, u8, u8, u8),
+        ppu: (u8, u8, u8),
+        cycles: u64,
+        total: u64,
     ) {
-        let (a,f,b,c,d,e,h,l,sp,pc) = regs;
-        let (m0,m1,m2,m3) = pcmem;
-        let (ly,stat,lcdc) = ppu;
+        let (a, f, b, c, d, e, h, l, sp, pc) = regs;
+        let (m0, m1, m2, m3) = pcmem;
+        let (ly, stat, lcdc) = ppu;
 
         writeln!(
             self.writer,
-            "A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{m0:02X},{m1:02X},{m2:02X},{m3:02X} LCDC:{lcdc:02X} LY:{ly:02X}"
+            "A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{m0:02X},{m1:02X},{m2:02X},{m3:02X} LCDC:{lcdc:02X} LY:{ly:02X} Cycles:{cycles} Total:{total}"
         ).unwrap()
     }
 
@@ -146,7 +148,7 @@ impl SaveState {
 pub struct GameBoy {
     cpu: Cpu,
     bus: Bus,
-    ppu: Ppu,
+    // ppu: Ppu,
 
     window: Window,
     gilrs: Gilrs,
@@ -159,7 +161,7 @@ pub struct GameBoy {
 }
 
 impl GameBoy {
-    pub fn new(cart: Cartridge, audio_producer: HeapProd<f32>, sample_rate: u32) -> Self {
+    pub fn new(cart: Cartridge, audio_producer: HeapProd<f32>, sample_rate: u32, cgb: bool) -> Self {
         // let mut bus = Bus::new(cart);
         // let mut ppu = Ppu::new();
 
@@ -175,8 +177,8 @@ impl GameBoy {
         const GB_CLOCK_HZ: f64 = 4_194_304.0;
         Self {
             cpu: Cpu::new(false),
-            bus: Bus::new(cart),
-            ppu: Ppu::new(),
+            bus: Bus::new(cart, cgb),
+            // ppu: Ppu::new(),
             window: Window::new("Ferro boy", 640, 576, WindowOptions::default()).unwrap(),
             gilrs: Gilrs::new().unwrap(),
             pad_state: PadState::default(),
@@ -188,7 +190,7 @@ impl GameBoy {
     }
 
     fn save_state(&self) {
-        let state = SaveState::new(&self.cpu, &self.ppu, &self.bus);
+        let state = SaveState::new(&self.cpu, &self.bus.ppu, &self.bus);
         
         let title = &self.bus.cart.header.title;
         let path = format!("saves/{title}.stat");
@@ -206,7 +208,7 @@ impl GameBoy {
             let state: SaveState = postcard::from_bytes(&bytes).expect("deserialize failed");
 
             self.cpu = state.cpu;
-            self.ppu = state.ppu;
+            self.bus.ppu = state.ppu;
             self.bus.load_state(state.bus_state);
             println!("State loaded");
 
@@ -238,7 +240,6 @@ impl GameBoy {
             self.cpu.registers.set_a(0x11);
         }
         let mut frame_count: u64 = 0;
-
         let mut next_frame_time: Instant = Instant::now() + FRAME_TIME;
         
         let mut last_report = Instant::now();
@@ -247,27 +248,9 @@ impl GameBoy {
 
         let mut turbo:Option<u32> = None;
         
-
         loop {
             if !args.headless && !self.window.is_open() { break; }
             if let Some(max) = args.frames { if frame_count >= max { break; } }
-
-            // let now = Instant::now();
-            // if now.duration_since(last_report) >= Duration::from_secs(1) {
-            //     let (vblank, stat, timer) = unsafe {
-            //         (VBLANK_COUNT, STAT_COUNT, TIMER_COUNT)
-            //     };
-            //     println!("cycles/sec: {}, frames/sec: {}, vblank count/sec: {}, stat count/sec: {}, timer count: {}", cycles_this_second, frames_this_second, vblank, stat, timer);
-            //     cycles_this_second = 0;
-            //     frames_this_second = 0;
-            //     unsafe {
-            //         VBLANK_COUNT = 0;
-            //         STAT_COUNT = 0;
-            //         TIMER_COUNT = 0;
-            //     }
-            //     last_report = now;
-                    
-            // }
 
             if let Some(t) = tracer.as_mut() {
                 let pc = self.cpu.registers.get_pc();
@@ -282,36 +265,33 @@ impl GameBoy {
                     self.cpu.registers.get_h(),
                     self.cpu.registers.get_l(),
                     self.cpu.registers.get_sp(),
-                    self.cpu.registers.get_pc() + 1,
+                    self.cpu.registers.get_pc(),
                 );
 
-                let pcmem = (                   
+                let pcmem = (
                     self.bus.read(pc),
                     self.bus.read(pc + 1),
                     self.bus.read(pc + 2),
                     self.bus.read(pc + 3),
                 );
-                let ppu_stuff = (self.bus.get_ly(), self.bus.get_stat(), self.bus.get_lcdc());
-                t.log(regs, pcmem, ppu_stuff);
+                let ppu_stuff = (self.bus.ppu.regs.ly, self.bus.ppu.regs.stat, self.bus.ppu.regs.lcdc);
+
+                let ticks_before = self.bus.tick_count;
+                self.cpu.step(&mut self.bus);
+                let m_cycles = self.bus.tick_count - ticks_before;
+
+                let unit_mult = if self.cpu.double_speed { 4 } else { 8 };
+                let cycles = m_cycles * unit_mult;
+                let total = self.bus.tick_count * unit_mult;
+
+                t.log(regs, pcmem, ppu_stuff, cycles, total);
+            } else {
+                self.cpu.step(&mut self.bus);
             }
 
-            let cycles = self.cpu.step(&mut self.bus);
+            // self.generate_audio_sample(cycles);
 
-            let non_double_cycles = if self.cpu.double_speed {
-                cycles / 2
-            } else {
-                cycles
-            };
-
-            cycles_this_second += cycles as u32;
-
-            self.bus.step_timer(cycles);
-            self.ppu.step(non_double_cycles, &mut self.bus);
-            self.bus.apu.step(non_double_cycles as u32);
-
-            self.generate_audio_sample(cycles);
-
-            if self.ppu.ready {
+            if self.bus.ppu.ready {
                 let frame_time = if let Some(turbo) = turbo {
                     FRAME_TIME / turbo
                 } else {
@@ -319,7 +299,7 @@ impl GameBoy {
                 };
 
                 if !args.headless {
-                    self.window.update_with_buffer(&self.ppu.frame_buffer, 160, 144).unwrap();
+                    self.window.update_with_buffer(&self.bus.ppu.frame_buffer, 160, 144).unwrap();
 
                     let now = Instant::now();
                     if now < next_frame_time {
@@ -333,7 +313,7 @@ impl GameBoy {
 
                     frames_this_second += 1;
                 }
-                self.ppu.ready = false;
+                self.bus.ppu.ready = false;
 
                 while let Some(Event { event, .. }) = self.gilrs.next_event() {
                 match event {

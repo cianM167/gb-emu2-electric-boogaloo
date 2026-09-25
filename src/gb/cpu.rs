@@ -1,6 +1,6 @@
 use std::{fs::{self, OpenOptions}, io::Write};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::value};
 
 use crate::gb::{STAT_COUNT, TIMER_COUNT, VBLANK_COUNT, bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
 
@@ -37,38 +37,70 @@ impl Cpu {
         }
     }
 
-    pub fn step(&mut self, bus: &mut Bus) -> u8 {
-        // if self.debug {
-        //     self.write_to_log(bus);
-        // }
+    pub fn fetch8(&mut self, bus: &mut Bus) -> u8 {
+        let value = bus.read_cycle(self.registers.get_pc());
+        self.registers.inc_pc_by(1);
+        value
+    }
 
-        let mut cycles = self.handle_interrupts(bus);
-        // if cycles > 0 {
-        //     return cycles;// to align with same boy logs
-        // }
+    pub fn fetch16(&mut self, bus: &mut Bus) -> u16 {
+        let lo = self.fetch8(bus)as u16;
+        let hi = self.fetch8(bus) as u16;
+        (hi << 8) | lo
+    }
 
-         if self.halted {
+    pub fn step(&mut self, bus: &mut Bus) {
+        if self.handle_interrupts(bus) {
+            return;
+        }
+
+        if self.halted {
+            bus.tick(self.double_speed);
             let pending = bus.get_ie() & bus.get_iflag();
             if pending != 0 {
-                cycles += 4;
                 self.halted = false;
-                return cycles;
-            } else {
-                cycles += 4;
-                return cycles;
             }
+            return;
         }
 
         let apply_halt_bug = self.halt_bug;
         self.halt_bug = false;
 
+        #[cfg(debug_assertions)]
+        let start = bus.tick_count;
+
         let pc_before = self.registers.get_pc();
-        let opcode = bus.read(pc_before);
-        // println!("opcode read: {:#02X} pc: {:#02X}", opcode, self.registers.get_pc());
+        let opcode = self.fetch8(bus);
 
         let instr = opcodes()[opcode as usize].expect(&*format!("Unknown opcode {:#02X}", opcode));
 
-        cycles += (instr.execute)(&instr, self, bus);// execute instruction
+        (instr.execute)(&instr, self, bus);// execute instruction
+
+
+        #[cfg(debug_assertions)]
+        {
+            use crate::gb::instructions::Operands;
+
+            let m_cycles_used = bus.tick_count - start;
+            let t_cycles_used = m_cycles_used as u16 * 4;
+            match instr.operands {
+                Operands::Cond(_) | Operands::CondImm16(_) | Operands::CondImm8(_) => {// not rehandling branch timing rn im lazy
+                    if t_cycles_used != instr.cycles as u16 {
+                        println!("cycle mismatch: opcode {opcode:#04X} expected {} got {t_cycles_used}", instr.cycles);
+                    }
+                } 
+
+                _ => {
+                    if opcode != 0xCB {
+                        debug_assert_eq!(
+                            t_cycles_used, instr.cycles as u16,
+                            "cycle mismatch: opcode {opcode:#04X} expected {} got {t_cycles_used}",
+                            instr.cycles
+                        );
+                    }
+                }
+            }
+        }
 
         if apply_halt_bug {
             self.registers.set_pc(pc_before);
@@ -78,117 +110,112 @@ impl Cpu {
             self.ime = true;
             self.enable_ime_next = false;
         }
-
-        cycles
     }
 
-    pub fn handle_interrupts(&mut self, bus: &mut Bus) -> u8 {
+    pub fn handle_interrupts(&mut self, bus: &mut Bus) -> bool {
         if !self.ime {
-            return 0;
+            return false;
         }
 
         let ie = bus.read(0xFFFF);
         let mut iflag = bus.read(0xFF0F);
         let log_iflag = iflag;
 
-        
-
         let pending = ie & iflag;
-        // eprintln!("ie={ie:08b} iflag={iflag:08b} pending={pending:02X} pc={:04X}", self.registers.get_pc());
         if pending == 0 {
-            return 0;
+            return false;
         }
 
         for i in 0..5 {
             if pending & (1 << i) != 0 {
-                iflag &= !(1 << i);
-                bus.write(0xFF0F, iflag);
+                bus.tick(self.double_speed);
+                bus.tick(self.double_speed);
 
+                bus.write(0xFF0F, iflag & !(1 << i));
                 self.ime = false;
 
-                self.registers.set_sp(self.registers.get_sp().wrapping_sub(2));
-                bus.write_u16(self.registers.get_sp(), self.registers.get_pc());
+                let sp = self.registers.get_sp().wrapping_sub(1);
+                self.registers.set_sp(sp);
+                bus.write_cycle(sp, (self.registers.get_pc() >> 8) as u8);
 
-                let pc = match i {
-                    0 => {// vblank
-                        // println!(
-                        //     "FRAME {} | PC:{:04X} IME:{} IE:{:02X} IF:{:02X} JOYP:{:02X} DIV:{:02X} TIMA:{:02X}",
-                        //     bus.get_frame(), self.registers.get_pc(), true, ie, log_iflag, bus.get_joyp(), bus.get_div(), bus.get_tima()
-                        // );
-                        unsafe { VBLANK_COUNT += 1; }
-                        0x0040
-                    },
-                    1 => {
-                        unsafe { STAT_COUNT += 1; }
-                        0x0048
-                    },// lcd/stat
-                    2 => {
-                        unsafe { TIMER_COUNT += 1; }
-                        0x0050
-                    },// timer
-                    3 => 0x0058,// serial
-                    4 => 0x0060,// joypad
+                let sp = sp.wrapping_sub(1);
+                self.registers.set_sp(sp);
+                bus.write_cycle(sp, (self.registers.get_pc() & 0xFF) as u8);
+
+                let vector = match i {
+                    0 => { unsafe { VBLANK_COUNT += 1; } 0x0040 }
+                    1 => { unsafe { STAT_COUNT  += 1; } 0x0048 }
+                    2 => { unsafe { TIMER_COUNT += 1; } 0x0050 }
+                    3 => 0x0058,
+                    4 => 0x0060,
                     _ => unreachable!(),
                 };
 
-                self.registers.set_pc(pc);
+                self.registers.set_pc(vector);
+                bus.tick(self.double_speed);
 
-                return 20;
+                return true;
             }
         }
 
-        return 0;
+        return false;
     }
 
-    fn write_to_log(&self, bus: &mut Bus) {// super brittle is temporary :)
-        let file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open("log.txt");
+    pub fn push16(&mut self, bus: &mut Bus, value: u16) {
+        let sp = self.registers.get_sp().wrapping_sub(1);
+        self.registers.set_sp(sp);
+        bus.write_cycle(sp, (value >> 8) as u8);
 
-        let (a, f, b, c, d, e, h, l, sp, pc) = (
-            self.registers.get_a(),
-            self.registers.get_f(),
-            self.registers.get_b(),
-            self.registers.get_c(),
-            self.registers.get_d(),
-            self.registers.get_e(),
-            self.registers.get_h(),
-            self.registers.get_l(),
-            self.registers.get_sp(),
-            self.registers.get_pc(),
-        );
-
-        let (pcmem0, pcmem1, pcmem2, pcmem3) = (
-            bus.read(pc),
-            bus.read(pc + 1),
-            bus.read(pc + 2),
-            bus.read(pc + 3),
-        );
-
-        let (ly, stat, lcdc, div) = (
-            bus.get_ly(),
-            bus.get_stat(),
-            bus.get_lcdc(),
-            bus.read_div(),
-        );
-
-        let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X} LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DIV:{div:02X}\n");
-
-        file.unwrap().write_all(line.as_bytes()).unwrap();
+        let sp = sp.wrapping_sub(1);
+        self.registers.set_sp(sp);
+        bus.write_cycle(sp, (value & 0xFF) as u8);
     }
 
-    pub fn fetch_next(&mut self) -> u8 {
-        todo!()
+    pub fn pop16(&mut self, bus: &mut Bus) -> u16 {
+        let sp = self.registers.get_sp();
+        let lo = bus.read_cycle(sp);
+        let hi = bus.read_cycle(sp.wrapping_add(1));
+        self.registers.set_sp(sp.wrapping_add(2));
+        (hi as u16) << 8 | lo as u16
     }
 
-    pub fn decode(opcode: u8, cb_opcode: bool) -> Option<Instruction> {
-        todo!()
-    }
+    // fn write_to_log(&self, bus: &mut Bus) {// super brittle is temporary :)
+    //     let file = OpenOptions::new()
+    //         .write(true)
+    //         .append(true)
+    //         .open("log.txt");
 
-    pub fn execute_next(&mut self) -> u64 {
-        todo!()
-    }
+    //     let (a, f, b, c, d, e, h, l, sp, pc) = (
+    //         self.registers.get_a(),
+    //         self.registers.get_f(),
+    //         self.registers.get_b(),
+    //         self.registers.get_c(),
+    //         self.registers.get_d(),
+    //         self.registers.get_e(),
+    //         self.registers.get_h(),
+    //         self.registers.get_l(),
+    //         self.registers.get_sp(),
+    //         self.registers.get_pc(),
+    //     );
+
+    //     let (pcmem0, pcmem1, pcmem2, pcmem3) = (
+    //         bus.read(pc),
+    //         bus.read(pc + 1),
+    //         bus.read(pc + 2),
+    //         bus.read(pc + 3),
+    //     );
+
+    //     let (ly, stat, lcdc, div) = (
+    //         bus.get_ly(),
+    //         bus.get_stat(),
+    //         bus.get_lcdc(),
+    //         bus.read_div(),
+    //     );
+
+    //     let line = format!("A:{a:02X} F:{f:02X} B:{b:02X} C:{c:02X} D:{d:02X} E:{e:02X} H:{h:02X} L:{l:02X} SP:{sp:04X} PC:{pc:04X} PCMEM:{pcmem0:02X},{pcmem1:02X},{pcmem2:02X},{pcmem3:02X} LY:{ly:02X} STAT:{stat:02X} LCDC:{lcdc:02X} DIV:{div:02X}\n");
+
+    //     file.unwrap().write_all(line.as_bytes()).unwrap();
+    // }
 }
 
 // fn flags_str(f: u8) -> String {
