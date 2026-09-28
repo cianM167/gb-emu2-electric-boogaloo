@@ -256,6 +256,8 @@ impl Bus {
 
             0xFF46 => self.dma_source,// probably wrong
 
+            0xFF68 => self.ppu.read_reg(addr),
+
             0xFF75..=0xFF7F => panic!(),
 
             0xFFFF => self.ie, //| 0xE0,
@@ -392,6 +394,8 @@ impl Bus {
             }
 
             0xFF56 => (),// ignore for cgb not done yet
+
+            0xFF68..=0xFF6B => self.ppu.write_reg(addr, value),
 
             0xFF75..=0xFF7F => (),// unused
             

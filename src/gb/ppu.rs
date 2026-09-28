@@ -30,6 +30,10 @@ pub struct PpuRegs {
     pub obp1: u8,  // FF49
     pub wy: u8,    // FF4A
     pub wx: u8,    // FF4B
+
+    pub bgpi: u8,  // FF68
+    pub obpi: u8,  // FF6A
+    pub obpd: u8,  // FF6B
 }
 
 impl PpuRegs {
@@ -46,6 +50,10 @@ impl PpuRegs {
             obp1: 0xFF,
             wy:   0x00,
             wx:   0x00,
+
+            bgpi: 0x00,
+            obpi: 0x00,
+            obpd: 0x00,
         }
     }
 }
@@ -74,6 +82,9 @@ pub struct Ppu {
     #[serde(with = "BigArray")]
     oam: [u8; 0xA0],
 
+    #[serde(with = "BigArray")]
+    cram: [u8; 0x128],
+
     stat_line: bool,
 }
 
@@ -95,6 +106,12 @@ impl Ppu {
             0xFF49 => self.regs.obp1,
             0xFF4A => self.regs.wy,
             0xFF4B => self.regs.wx,
+
+            0xFF68 => self.regs.bgpi,
+            0xFF69 => self.read_cram(),
+            0xFF6A => self.regs.obpi,
+            0xFF6B => self.regs.obpd,
+
             _ => 0xFF,
         }
     }
@@ -112,6 +129,12 @@ impl Ppu {
             0xFF49 => self.regs.obp1 = v,
             0xFF4A => self.regs.wy = v,
             0xFF4B => self.regs.wx = v,
+
+            0xFF68 => self.regs.bgpi = v,
+            0xFF69 => self.write_cram(v),
+            0xFF6A => self.regs.obpi = v,
+            0xFF6B => self.regs.obpd = v,
+
             _ => {}
         }
     }
@@ -133,6 +156,33 @@ impl Ppu {
         self.oam[(addr - 0xFE00) as usize] = value
     }
 
+    pub fn read_cram(&self) -> u8 { // addr selected by regs
+        let addr = self.regs.bgpi & 0b0011_1111; 
+        // let inc = (self.regs.bgpi & 0x80) != 0; // read doesnt auto increment
+        self.cram[addr as usize]
+    }
+
+    pub fn write_cram(&mut self, value: u8) { // addr selected by regs
+        let addr = self.regs.bgpi & 0b0011_1111; 
+        let inc = (self.regs.bgpi & 0x80) != 0; // read doesnt auto increment
+        self.cram[addr as usize] = value;
+
+        if inc { self.inc_bgpi(); }
+    }
+
+    pub fn inc_bgpi(&mut self) {
+        let mut addr = self.regs.bgpi & 0b0011_1111; 
+        let inc = self.regs.bgpi & 0x80;
+
+        addr = addr.wrapping_add(1);
+
+        if (addr & 1 << 6) != 0 {
+            addr = 0 + inc << 7; // overflow
+        }
+
+        self.regs.bgpi = addr;
+    }
+
     pub fn new(cgb: bool) -> Self {
         Self { 
             frame_buffer: [0; 160 * 144],
@@ -147,6 +197,8 @@ impl Ppu {
 
             vram: [0; 0x2000],
             oam: [0; 0xA0],
+
+            cram: [0; 0x128],
 
             stat_line: false,
         }
