@@ -1,21 +1,28 @@
-[package]
-name = "gb_emu2"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "gb-core",
+    "gb-desktop",
+]
 
-[dependencies]
-anyhow = "1.0.104"
-cpal = "0.18.2"
-gilrs = "0.11.2"
-minifb = "0.28.0"
-postcard = { version = "1.1.3", features = ["alloc"]}
-rfd = "0.17.2"
-ringbuf = "0.5.2"
-serde = { version = "1.0.229", features = ["derive"] }
-serde-big-array = "0.5.1"
-serde_json = "1.0.151"
-wasmtime = "48.0.2"
+# [package]
+# name = "gb_emu2"
+# version = "0.1.0"
+# edition = "2024"
 
-[profile.checked]
-inherits = "release"
-debug-assertions = true
+# [dependencies]
+# anyhow = "1.0.104"
+# cpal = "0.18.2"
+# gilrs = "0.11.2"
+# minifb = "0.28.0"
+# postcard = { version = "1.1.3", features = ["alloc"]}
+# rfd = "0.17.2"
+# ringbuf = "0.5.2"
+# serde = { version = "1.0.229", features = ["derive"] }
+# serde-big-array = "0.5.1"
+# serde_json = "1.0.151"
+# wasmtime = "48.0.2"
+
+# [profile.checked]
+# inherits = "release"
+# debug-assertions = true

@@ -1,4 +1,5 @@
 use super::mapper::Mapper;
+use alloc::{vec::Vec};
 
 pub struct RomData {
     rom: Vec<u8>,

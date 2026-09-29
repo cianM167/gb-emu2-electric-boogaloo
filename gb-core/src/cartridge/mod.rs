@@ -7,12 +7,17 @@ mod mbc1;
 mod mbc2;
 mod mbc3;
 mod loader;
-mod abi;
 
+#[cfg(feature = "wasm-plugins")]
+pub mod abi;
+
+use alloc::{boxed::Box};
+pub use loader::load_rom_bytes;
+#[cfg(feature = "std")]
 pub use loader::load_rom;
 use serde::{Deserialize, Serialize};
 
-use crate::gb::cartridge::{header::CartHeader, mapper::Mapper};
+use crate::cartridge::{header::CartHeader, mapper::Mapper};
 
 pub struct Cartridge {
     pub header: CartHeader,

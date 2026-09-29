@@ -1,13 +1,13 @@
 use std::{env, error::Error};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use gb_core::{cartridge::load_rom, instructions::{opcodes, opcodes_cb, unimplemented}};
 use minifb::KeyRepeat::No;
 use ringbuf::{HeapCons, HeapProd, HeapRb, traits::{Consumer, Split}};
 use rfd::FileDialog;
 
-use crate::gb::{GameBoy, cartridge::load_rom, instructions::{opcodes, opcodes_cb, unimplemented}};
+use crate::desktop::DesktopApp;
 
-mod gb;
-pub mod objects;
+mod desktop;
 
 struct Args {
     headless: bool,
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (stream, sample_rate) = setup_audio(consumer);
     stream.play().unwrap();
 
-    let mut gb = GameBoy::new(cart, producer, sample_rate, args.cgb_mode);
+    let mut gb = DesktopApp::new(cart, args.cgb_mode, producer);
 
     gb.run(&args);
 

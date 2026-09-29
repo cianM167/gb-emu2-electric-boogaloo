@@ -25,7 +25,7 @@ use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 use wasmtime::{Caller, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::gb::cartridge::mapper::Mapper;
+use crate::cartridge::mapper::Mapper;
 
 pub const PLUGIN_ABI_VERSION: u32 = 1;
 

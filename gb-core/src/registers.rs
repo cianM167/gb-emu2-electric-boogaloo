@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::gb::{bus::Bus, instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}}, registers};
+use crate::{bus::Bus, instructions::{Condition, Delta, Reg8::{self, A, B, C, D, E, F, H, L}, Reg16::{self, AF, BC, DE, HL, SP}}, registers};
 
 macro_rules! get_set  {
     ($reg:ident, $get_name:ident, $set_name:ident, $size:ty) => {
@@ -238,7 +238,7 @@ impl Registers {
     }
 
     pub fn check_conditions(&self, condition: Condition) -> bool {
-        use crate::gb::instructions::Condition::{C, NC, Z, NZ};
+        use crate::instructions::Condition::{C, NC, Z, NZ};
         
         match condition {
             NZ => !self.get_flag(FlagBits::Z),

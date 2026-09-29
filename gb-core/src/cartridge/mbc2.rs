@@ -1,4 +1,5 @@
-use crate::gb::cartridge::mapper::{self, Mapper};
+use crate::cartridge::mapper::{self, Mapper};
+use alloc::{vec::Vec};
 
 pub struct Mbc2 {
     rom: Vec<u8>,

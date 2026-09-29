@@ -1,7 +1,8 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use alloc::collections::BTreeMap as HashMap;
 
-use crate::gb::instructions::Delta;
+use crate::instructions::Delta;
+use alloc::{boxed::Box, string::String, vec::Vec};
 
 #[derive(Deserialize)]
 pub struct OpcodeFile {

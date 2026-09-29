@@ -1,8 +1,6 @@
-use std::{fs::{self, OpenOptions}, io::Write};
-
 use serde::{Deserialize, Serialize, de::value};
 
-use crate::gb::{STAT_COUNT, TIMER_COUNT, VBLANK_COUNT, bus::{self, Bus}, cartridge::Cartridge, instructions::{self, Instruction, opcodes}, registers::Registers};
+use crate::{bus::Bus, instructions::opcodes, registers::Registers};
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Cpu {
@@ -84,7 +82,7 @@ impl Cpu {
 
         #[cfg(debug_assertions)]
         {
-            use crate::gb::instructions::Operands;
+            use crate::instructions::Operands;
 
             let m_cycles_used = bus.tick_count - start;
             let t_cycles_used = m_cycles_used as u16 * 4;
@@ -148,9 +146,9 @@ impl Cpu {
                 bus.write_cycle(sp, (self.registers.get_pc() & 0xFF) as u8);
 
                 let vector = match i {
-                    0 => { unsafe { VBLANK_COUNT += 1; } 0x0040 }
-                    1 => { unsafe { STAT_COUNT  += 1; } 0x0048 }
-                    2 => { unsafe { TIMER_COUNT += 1; } 0x0050 }
+                    0 => 0x0040,
+                    1 => 0x0048,
+                    2 => 0x0050,
                     3 => 0x0058,
                     4 => 0x0060,
                     _ => unreachable!(),

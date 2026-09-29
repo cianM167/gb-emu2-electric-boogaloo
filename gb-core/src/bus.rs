@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
-
-use crate::gb::{apu::{Apu, Channel::{Ch1, Ch2, Ch3, Ch4}}, bus_state::BusState, cartridge::Cartridge, ppu::Ppu};
+use crate::{apu::{Apu, Channel::{Ch1, Ch2, Ch3, Ch4}}, bus_state::BusState, cartridge::Cartridge, ppu::Ppu};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Joypad {
@@ -298,9 +297,12 @@ impl Bus {
                 if value == 0x81 {
                     // Blargg convention: print immediately
                     let ch = self.serial_data as char;
-                    print!("{}", ch);
-                    use std::io::Write;
-                    std::io::stdout().flush().unwrap();
+                    #[cfg(feature = "std")]
+                    {
+                        print!("{}", ch);
+                        use std::io::Write;
+                        std::io::stdout().flush().unwrap();
+                    }
                 }
             }
 

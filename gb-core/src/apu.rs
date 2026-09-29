@@ -1,6 +1,6 @@
 use serde::de::value;
 
-use crate::gb::apu::Channel::{Ch1, Ch2, Ch3, Ch4};
+use crate::apu::Channel::{Ch1, Ch2, Ch3, Ch4};
 
 const DUTY_TABLE: [[u8; 8]; 4] = [
     [0, 0, 0, 0, 0, 0, 0, 0],

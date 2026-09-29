@@ -464,18 +464,18 @@ impl GameBoy {
         file.unwrap().write_all(line.as_bytes()).unwrap();
     }
 
-    fn generate_audio_sample(&mut self, cycles: u8) {
-        self.sample_cycle_accum += cycles as f64;
+    // fn generate_audio_sample(&mut self, cycles: u8) {
+    //     self.sample_cycle_accum += cycles as f64;
 
-        while self.sample_cycle_accum >= self.cycles_per_sample {
-            self.sample_cycle_accum -= self.cycles_per_sample;
+    //     while self.sample_cycle_accum >= self.cycles_per_sample {
+    //         self.sample_cycle_accum -= self.cycles_per_sample;
 
-            let sample = self.bus.apu.mix_output();
-            let err = self.audio_producer.try_push(sample);// ignore failure lol
+    //         let sample = self.bus.apu.mix_output();
+    //         let err = self.audio_producer.try_push(sample);// ignore failure lol
 
-            // if sample == 0f32 {
-            //     println!("audio error: {:?}, sample: {}, apu ch2: {:?}", err, sample, self.bus.apu.ch2);
-            // }
-        }
-    }
+    //         // if sample == 0f32 {
+    //         //     println!("audio error: {:?}, sample: {}, apu ch2: {:?}", err, sample, self.bus.apu.ch2);
+    //         // }
+    //     }
+    // }
 }

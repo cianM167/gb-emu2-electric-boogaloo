@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize, de::value};
 use serde_big_array::BigArray;
-use crate::gb::{bus::Bus, ppu::PpuMode::OamScan};
+use crate::{bus::Bus, ppu::PpuMode::OamScan};
+use alloc::{vec::Vec};
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum PpuMode {
@@ -33,7 +34,6 @@ pub struct PpuRegs {
 
     pub bgpi: u8,  // FF68
     pub obpi: u8,  // FF6A
-    pub obpd: u8,  // FF6B
 }
 
 impl PpuRegs {
@@ -53,7 +53,6 @@ impl PpuRegs {
 
             bgpi: 0x00,
             obpi: 0x00,
-            obpd: 0x00,
         }
     }
 }
@@ -108,9 +107,9 @@ impl Ppu {
             0xFF4B => self.regs.wx,
 
             0xFF68 => self.regs.bgpi,
-            0xFF69 => self.read_cram(),
+            0xFF69 => self.read_cram_bgpi(),
             0xFF6A => self.regs.obpi,
-            0xFF6B => self.regs.obpd,
+            0xFF6B => self.read_cram_obpi(),
 
             _ => 0xFF,
         }
@@ -131,9 +130,9 @@ impl Ppu {
             0xFF4B => self.regs.wx = v,
 
             0xFF68 => self.regs.bgpi = v,
-            0xFF69 => self.write_cram(v),
+            0xFF69 => self.write_cram_bgpi(v),
             0xFF6A => self.regs.obpi = v,
-            0xFF6B => self.regs.obpd = v,
+            0xFF6B => self.write_cram_obpi(v),
 
             _ => {}
         }
@@ -156,18 +155,31 @@ impl Ppu {
         self.oam[(addr - 0xFE00) as usize] = value
     }
 
-    pub fn read_cram(&self) -> u8 { // addr selected by regs
+    pub fn read_cram_bgpi(&self) -> u8 { // addr selected by regs
         let addr = self.regs.bgpi & 0b0011_1111; 
         // let inc = (self.regs.bgpi & 0x80) != 0; // read doesnt auto increment
         self.cram[addr as usize]
     }
 
-    pub fn write_cram(&mut self, value: u8) { // addr selected by regs
+    pub fn write_cram_bgpi(&mut self, value: u8) { // addr selected by regs
         let addr = self.regs.bgpi & 0b0011_1111; 
-        let inc = (self.regs.bgpi & 0x80) != 0; // read doesnt auto increment
+        let inc = (self.regs.bgpi & 0x80) != 0;
         self.cram[addr as usize] = value;
 
         if inc { self.inc_bgpi(); }
+    }
+
+    pub fn read_cram_obpi(&self) -> u8 {
+        let addr = self.regs.obpi & 0b0011_1111; 
+        self.cram[(addr + 0x64) as usize]
+    }
+
+    pub fn write_cram_obpi(&mut self, value: u8) { // addr selected by regs
+        let addr = self.regs.obpi & 0b0011_1111; 
+        let inc = (self.regs.obpi & 0x80) != 0;
+        self.cram[(addr + 0x64) as usize] = value;
+
+        if inc { self.inc_obpi(); }
     }
 
     pub fn inc_bgpi(&mut self) {
@@ -181,6 +193,19 @@ impl Ppu {
         }
 
         self.regs.bgpi = addr;
+    }
+
+    pub fn inc_obpi(&mut self) {
+        let mut addr = self.regs.obpi & 0b0011_1111; 
+        let inc = self.regs.obpi & 0x80;
+
+        addr = addr.wrapping_add(1);
+
+        if (addr & 1 << 6) != 0 {
+            addr = 0 + inc << 7; // overflow
+        }
+
+        self.regs.obpi = addr;
     }
 
     pub fn new(cgb: bool) -> Self {

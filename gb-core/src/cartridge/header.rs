@@ -1,3 +1,5 @@
+use alloc::{string::String};
+
 #[derive(Debug, Default)]
 pub struct CartHeader {
     pub title: String,

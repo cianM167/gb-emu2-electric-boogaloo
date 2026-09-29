@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::gb::bus::Joypad;
+use crate::bus::Joypad;
+use alloc::{vec::Vec};
 
 #[derive(Serialize, Deserialize)]
 pub struct BusState {

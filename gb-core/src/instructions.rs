@@ -1,8 +1,9 @@
-use std::{collections::HashMap, fs::File, result, sync::OnceLock};
+use alloc::{collections::BTreeMap as HashMap, string::String, vec::Vec};
+use spin::Once;
 
 use serde::{Deserialize, de::value};
 
-use crate::{gb::{bus::Bus, cpu::Cpu, instructions::{Delta::Increment, MemTarget::{HighC, HighImm8}}, registers::FlagBits}, objects::{OpcodeFile, RawFlags, RawOpcode, RawOperand}};
+use crate::{bus::Bus, cpu::Cpu, instructions::{Delta::Increment, MemTarget::{HighC, HighImm8}}, objects::{OpcodeFile, RawFlags, RawOpcode, RawOperand}, registers::FlagBits};
 
 // macro_rules! instr {
 //     ($opcode:expr, $name:expr, $cycles:expr, $size:expr, $flags:expr, $exec:expr) => {
@@ -1732,18 +1733,18 @@ fn set_reg(instr: &Instruction, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
     instr.cycles
 }
 
-static OPCODES: OnceLock<[Option<Instruction>; 256]> = OnceLock::new();
-static OPCODES_CB: OnceLock<[Option<Instruction>; 256]> = OnceLock::new();
+static OPCODES: Once<[Option<Instruction>; 256]> = Once::new();
+static OPCODES_CB: Once<[Option<Instruction>; 256]> = Once::new();
 
 pub fn opcodes() -> &'static [Option<Instruction>; 256] {
-    OPCODES.get_or_init(|| {
+    OPCODES.call_once(|| {
         let file = load_opcodes_file();
         build_table(&file.unprefixed, false)
     })
 }
 
 pub fn opcodes_cb() -> &'static [Option<Instruction>; 256] {
-    OPCODES_CB.get_or_init(|| {
+    OPCODES_CB.call_once(|| {
         let file = load_opcodes_file();
         build_table(&file.cbprefixed, false) // is_cb handling — see below
     })
